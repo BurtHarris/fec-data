@@ -1,0 +1,24 @@
+# FEC ETL local data and artifacts
+
+# Keep ETL directory structure, but ignore actual data files
+/data/raw/*
+!/data/raw/.gitkeep
+/data/staging/*
+!/data/staging/.gitkeep
+/data/processed/*
+!/data/processed/.gitkeep
+
+# Local DuckDB database artifacts
+/db/*.duckdb
+/db/*.db
+/db/*.wal
+
+# Logs and temp files
+/logs/*
+!/logs/.gitkeep
+/tmp/*
+!/tmp/.gitkeep
+
+# Optional local environment files
+.env
+.env.*

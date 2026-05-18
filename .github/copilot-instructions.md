@@ -34,6 +34,11 @@ scripts/load/              # DuckDB load/orchestration scripts
 sql/schema/                # DDL: CREATE TABLE statements
 sql/transform/             # INSERT...SELECT / merge / cleanup SQL
 sql/analysis/              # QA checks and ad hoc queries
+artifacts/exploration/     # HTML: approach comparisons, implementation plans — committed
+artifacts/diagrams/        # HTML: data flow diagrams, schema maps — committed
+artifacts/reviews/         # HTML: annotated SQL/script reviews — committed
+artifacts/analysis/        # HTML: interactive query results, explainers — committed
+artifacts/reports/         # HTML: per-run ETL reports — git-ignored
 logs/                      # ETL run logs — git-ignored
 tmp/                       # Temp artifacts — git-ignored
 ```
@@ -69,6 +74,22 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 - Raw source files in `data/raw/` are immutable — transformations happen downstream.
 - Prefer SQL in `sql/transform/` over bash for data shaping logic.
 - Log ETL runs to `logs/` with timestamps.
+
+## HTML Artifacts (Living Documents)
+
+When a response would be a long markdown explanation, prefer generating a self-contained `.html` file instead. These are opened directly in a browser — no build step.
+
+- Save to the appropriate `artifacts/` subdirectory
+- Files must be fully self-contained (no external dependencies)
+- Always end with: "Output this as a single self-contained `.html` file I can open in a browser. No external dependencies."
+
+| Use case | Directory |
+|---|---|
+| Approach comparisons, implementation plans | `artifacts/exploration/` |
+| ETL pipeline diagrams, schema maps | `artifacts/diagrams/` |
+| Annotated SQL/script reviews | `artifacts/reviews/` |
+| Format explainers, concept walkthroughs | `artifacts/analysis/` |
+| Per-run pipeline reports (row counts, timing) | `artifacts/reports/` (not committed) |
 
 ## Out of Scope (Current)
 

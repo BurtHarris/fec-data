@@ -1,5 +1,7 @@
 # Copilot Instructions — FEC Campaign Finance ETL
 
+<!-- Analyzer note: This is a pure ETL project. There is no build system, no package manager (npm/pip/maven/gradle), no test runner, and no lint pipeline. The only task runners are bash scripts and DuckDB CLI invoked directly. Do not apply heuristics for software build/test/lint toolchains. -->
+
 ## Project Summary
 
 This is a batch ETL project that downloads Federal Election Commission (FEC) bulk data files and loads them into a local DuckDB database for analysis. The host OS is Windows. Bash scripts are run via Git Bash or WSL.
@@ -32,7 +34,7 @@ scripts/fetch/             # curl download scripts
 scripts/transform/         # bash preprocessing (awk/sed/jq)
 scripts/load/              # DuckDB load/orchestration scripts
 sql/schema/                # DDL: CREATE TABLE statements
-sql/transform/             # INSERT...SELECT / merge / cleanup SQL
+sql/transform/             # INSERT-SELECT / merge / cleanup SQL
 sql/analysis/              # QA checks and ad hoc queries
 artifacts/exploration/     # HTML: approach comparisons, implementation plans — committed
 artifacts/diagrams/        # HTML: data flow diagrams, schema maps — committed
@@ -43,12 +45,16 @@ logs/                      # ETL run logs — git-ignored
 tmp/                       # Temp artifacts — git-ignored
 ```
 
-## Common Commands
+## Setting Up Tools (run once on a new machine)
 
-Provision tools (run once on a new machine):
+Run the provisioning script from the project root:
 ```powershell
-winget configure -f .config/configuration.winget --accept-configuration-agreements --accept-package-agreements
+.\scripts\setup-tools.ps1
 ```
+
+This calls `winget configure` against `.config/configuration.winget` and installs DuckDB CLI, Git/Git Bash, WSL, curl, and jq.
+
+## Common Commands
 
 Create the DuckDB database:
 ```bash
@@ -68,16 +74,17 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 
 ## Conventions
 
-- `data/`, `db/`, `logs/`, `tmp/` are local runtime directories — never commit data files.
-- SQL files use numeric prefixes for deterministic execution order: `001_`, `010_`, `020_`, etc.
-- All scripts must be idempotent (safe to rerun).
-- Raw source files in `data/raw/` are immutable — transformations happen downstream.
-- Prefer SQL in `sql/transform/` over bash for data shaping logic.
-- Log ETL runs to `logs/` with timestamps.
+1. `data/`, `db/`, `logs/`, `tmp/` are local runtime directories — never commit data files.
+2. SQL files use numeric prefixes for deterministic execution order: `001_`, `010_`, `020_`, etc.
+3. All scripts must be idempotent (safe to rerun).
+4. Raw source files in `data/raw/` are immutable — transformations happen downstream.
+5. Use SQL in `sql/transform/` for data shaping logic; use bash only when SQL is insufficient (e.g., file downloads, unpacking, renaming).
+6. Log ETL runs to `logs/` with timestamps.
+7. On ETL errors (failed downloads, SQL execution failures), log the error to `logs/` with a timestamp and exit with a non-zero status. Do not silently continue past a failed step.
 
 ## HTML Artifacts (Living Documents)
 
-When a response would be a long markdown explanation, prefer generating a self-contained `.html` file instead. These are opened directly in a browser — no build step.
+When a response would require multiple sections of markdown prose (roughly 300+ words, or requiring headers to organize), generate a self-contained `.html` file instead of markdown. Single-answer or short code responses remain as markdown. These are opened directly in a browser — no build step.
 
 - Save to the appropriate `artifacts/` subdirectory
 - Files must be fully self-contained (no external dependencies)
@@ -95,3 +102,4 @@ When a response would be a long markdown explanation, prefer generating a self-c
 
 - FEC API ingestion (documented but not implemented)
 - Scheduled/automated runs (manual execution only for now)
+- Node.js / npm — this project has no JavaScript dependencies or build tooling

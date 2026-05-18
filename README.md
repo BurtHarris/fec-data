@@ -69,15 +69,17 @@ curl --version
 bash --version
 ```
 
-### Optional: Provision Tools with winget configure
+### Optional: Provision or Update Tools with winget configure
 
 This repository includes a Windows package provisioning file at `.config/configuration.winget` (the [Microsoft-recommended naming convention](https://learn.microsoft.com/en-us/windows/package-manager/configuration/create#file-naming-convention)).
 
 Run from project root:
 
 ```powershell
-winget configure -f .config/configuration.winget --accept-configuration-agreements --accept-package-agreements
+.\scripts\setup-tools.ps1
 ```
+
+This script is **run manually by choice** — it is never called automatically by the ETL pipeline. It is safe to rerun at any time: `winget configure` is idempotent and will install missing tools or upgrade existing ones to the configured version.
 
 The configuration installs:
 

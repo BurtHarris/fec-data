@@ -19,6 +19,11 @@
 /tmp/*
 !/tmp/.gitkeep
 
+# Artifacts: commit living docs (exploration, diagrams, reviews, analysis)
+# but ignore run-specific reports (regenerated per ETL run)
+/artifacts/reports/*
+!/artifacts/reports/.gitkeep
+
 # Optional local environment files
 .env
 .env.*

@@ -11,7 +11,7 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 - bash — ETL orchestration scripts
 - jq — JSON parsing in shell pipelines
 - Windows (Git Bash or WSL for bash; PowerShell for git/admin tasks)
-- winget — tool provisioning (`winget/fec-etl.dsc.yaml`)
+- winget — tool provisioning (`.config/configuration.winget`)
 
 ## Key FEC Data Sources
 
@@ -22,26 +22,27 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 ## Repository Layout
 
 ```
-data/raw/         # Downloaded source files — git-ignored, not committed
-data/staging/     # Unpacked/normalized files — git-ignored
-data/processed/   # Curated extracts — git-ignored
-db/               # DuckDB .duckdb files — git-ignored
-scripts/fetch/    # curl download scripts
-scripts/transform/ # bash preprocessing (awk/sed/jq)
-scripts/load/     # DuckDB load/orchestration scripts
-sql/schema/       # DDL: CREATE TABLE statements
-sql/transform/    # INSERT...SELECT / merge / cleanup SQL
-sql/analysis/     # QA checks and ad hoc queries
-logs/             # ETL run logs — git-ignored
-tmp/              # Temp artifacts — git-ignored
-winget/           # winget DSC provisioning YAML
+.config/                   # winget provisioning (Microsoft-recommended location)
+  configuration.winget     # winget configure file
+data/raw/                  # Downloaded source files — git-ignored, not committed
+data/staging/              # Unpacked/normalized files — git-ignored
+data/processed/            # Curated extracts — git-ignored
+db/                        # DuckDB .duckdb files — git-ignored
+scripts/fetch/             # curl download scripts
+scripts/transform/         # bash preprocessing (awk/sed/jq)
+scripts/load/              # DuckDB load/orchestration scripts
+sql/schema/                # DDL: CREATE TABLE statements
+sql/transform/             # INSERT...SELECT / merge / cleanup SQL
+sql/analysis/              # QA checks and ad hoc queries
+logs/                      # ETL run logs — git-ignored
+tmp/                       # Temp artifacts — git-ignored
 ```
 
 ## Common Commands
 
 Provision tools (run once on a new machine):
 ```powershell
-winget configure -f winget/fec-etl.dsc.yaml --accept-configuration-agreements --accept-package-agreements
+winget configure -f .config/configuration.winget --accept-configuration-agreements --accept-package-agreements
 ```
 
 Create the DuckDB database:

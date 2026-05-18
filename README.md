@@ -29,6 +29,8 @@ This repository is set up for an ETL workflow that downloads Federal Election Co
 
 ```text
 fec-data/
+  .config/
+    configuration.winget  # winget tool provisioning (Microsoft-recommended location)
   data/
     raw/         # Downloaded source files (zip/csv/json)
     staging/     # Unpacked and lightly normalized files
@@ -66,6 +68,24 @@ duckdb --version
 curl --version
 bash --version
 ```
+
+### Optional: Provision Tools with winget configure
+
+This repository includes a Windows package provisioning file at `.config/configuration.winget` (the [Microsoft-recommended naming convention](https://learn.microsoft.com/en-us/windows/package-manager/configuration/create#file-naming-convention)).
+
+Run from project root:
+
+```powershell
+winget configure -f .config/configuration.winget --accept-configuration-agreements --accept-package-agreements
+```
+
+The configuration installs:
+
+- DuckDB CLI (`DuckDB.cli`)
+- Git for Windows / Git Bash (`Git.Git`)
+- WSL (`Microsoft.WSL`) as an optional bash environment
+- curl (`cURL.cURL`)
+- jq (`jqlang.jq`)
 
 ## Quick Start
 

@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: DuckDBCli
+      directives:
+        description: Install DuckDB CLI for local analytics and ETL SQL
+      settings:
+        id: DuckDB.cli
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: GitForWindows
+      directives:
+        description: Install Git (includes Git Bash)
+      settings:
+        id: Git.Git
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: WSL
+      directives:
+        description: Install Windows Subsystem for Linux (optional bash environment)
+      settings:
+        id: Microsoft.WSL
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Curl
+      directives:
+        description: Install curl CLI
+      settings:
+        id: cURL.cURL
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Jq
+      directives:
+        description: Install jq for JSON parsing in shell pipelines
+      settings:
+        id: jqlang.jq
+        source: winget

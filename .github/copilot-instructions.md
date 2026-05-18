@@ -1,64 +1,75 @@
-# Copilot instructions for this repository
+# Copilot Instructions — FEC Campaign Finance ETL
 
-Short summary
-- Current repository appears empty (no tracked source files found). This file documents detection heuristics and useful conventions to help future Copilot sessions work effectively once code is added.
+## Project Summary
 
-1) Build / test / lint commands (detection heuristics)
-- Repo currently has no package manifests or build files. When files are present, use the following detection order and run commands accordingly:
-  - Node (package.json):
-    - Install: npm ci
-    - Full test: npm test or npm run test
-    - Single test: npx jest <path/to/test> -t "test name" OR npm test -- -t "test name"
-    - Lint: npm run lint or npx eslint .
-  - Python (pyproject.toml, requirements.txt, setup.cfg):
-    - Install: python -m pip install -r requirements.txt or python -m pip install -e .
-    - Full test: pytest
-    - Single test: pytest path/to/file.py::test_function or pytest -k <expr>
-    - Lint: ruff . or flake8 .
-  - Go (go.mod):
-    - Build: go build ./...
-    - Full test: go test ./...
-    - Single test: go test ./pkg -run TestName
-  - Java/Maven (pom.xml):
-    - Full test: mvn test
-    - Single test: mvn -Dtest=ClassName#method test
-  - Gradle (build.gradle):
-    - Full test: ./gradlew test
-    - Single test: ./gradlew test --tests "com.example.MyTest.testMethod"
-  - Makefile: check make help; common targets: make build, make test, make lint
-  - Docker/docker-compose: docker-compose up --build for integrated runs
+This is a batch ETL project that downloads Federal Election Commission (FEC) bulk data files and loads them into a local DuckDB database for analysis. The host OS is Windows. Bash scripts are run via Git Bash or WSL.
 
-For each detected project type, prefer project-local task runners (npm scripts, tox.ini, Makefile, Gradle wrapper) over global tooling.
+## Stack
 
-2) How to run a single test (quick cheatsheet)
-- Jest (Node): npx jest <file> -t "test name"
-- Mocha: npx mocha <file> --grep "test name"
-- Pytest: pytest path/to/test_file.py::test_name
-- Go: go test ./pkg -run TestName
-- JUnit/Maven: mvn -Dtest=ClassName#method test
+- DuckDB CLI — local analytics database and SQL transforms
+- curl — bulk file downloads
+- bash — ETL orchestration scripts
+- jq — JSON parsing in shell pipelines
+- Windows (Git Bash or WSL for bash; PowerShell for git/admin tasks)
+- winget — tool provisioning (`winget/fec-etl.dsc.yaml`)
 
-3) High-level architecture (how to discover the big picture)
-- Look for these top-level directories in priority order to establish architecture quickly:
-  - src/ or lib/ — primary application code
-  - cmd/ or cli/ — executable entrypoints
-  - pkg/ or internal/ — reusable libraries
-  - tests/ or test/ — unit/integration tests
-  - data/ or fixtures/ — seeded data or sample CSVs
-  - scripts/ or tools/ — maintenance and ETL scripts
-  - infra/ or deploy/ — deployment manifests, IaC
-- For data-focused repos, expect CSV/TSV in data/ and processing code in scripts/ or src/etl/.
-- For multi-language repos, detect each language by its manifest (package.json, pyproject.toml, go.mod) and treat each language subtree as a separate service when reasoning about changes.
+## Key FEC Data Sources
 
-4) Key conventions and repository-specific notes
-- No repository-specific conventions detected (no README, CONTRIBUTING, or manifest files present). When they exist, prefer using:
-  - project-local scripts (npm scripts, Makefile, tox) to run tasks
-  - project-defined linters/config files (eslint, ruff, .prettierrc) for formatting/linting rules
-- When making changes, search for tests in tests/ or __tests__ to find where behavior is asserted and update tests accordingly.
+- Bulk data portal: https://www.fec.gov/data/browse-data/?tab=bulk-data
+- Electronic filing specs: https://www.fec.gov/campaign-finance-data/technical-specifications/
+- FEC API (not currently used — documented for future reference only): https://api.open.fec.gov/developers/
 
-5) AI / assistant config files checked
-- Looked for CLAUDE.md, .cursorrules, AGENTS.md, .windsurfrules, CONVENTIONS.md, AIDER_CONVENTIONS.md, .clinerules — none detected in current tree.
+## Repository Layout
 
-If/when this repository is populated, update this file to include the exact build/test/lint commands discovered in top-level manifests and any repository-specific conventions (naming, API layers, data formats).
+```
+data/raw/         # Downloaded source files — git-ignored, not committed
+data/staging/     # Unpacked/normalized files — git-ignored
+data/processed/   # Curated extracts — git-ignored
+db/               # DuckDB .duckdb files — git-ignored
+scripts/fetch/    # curl download scripts
+scripts/transform/ # bash preprocessing (awk/sed/jq)
+scripts/load/     # DuckDB load/orchestration scripts
+sql/schema/       # DDL: CREATE TABLE statements
+sql/transform/    # INSERT...SELECT / merge / cleanup SQL
+sql/analysis/     # QA checks and ad hoc queries
+logs/             # ETL run logs — git-ignored
+tmp/              # Temp artifacts — git-ignored
+winget/           # winget DSC provisioning YAML
+```
 
----
-Created by Copilot session helper. If you'd like, add the repository README/CONTRIBUTING and I will incorporate their contents into this file for more precise instructions.
+## Common Commands
+
+Provision tools (run once on a new machine):
+```powershell
+winget configure -f winget/fec-etl.dsc.yaml --accept-configuration-agreements --accept-package-agreements
+```
+
+Create the DuckDB database:
+```bash
+duckdb db/fec.duckdb ".databases"
+```
+
+Download a bulk file:
+```bash
+curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
+```
+
+Apply schema or transform SQL:
+```bash
+duckdb db/fec.duckdb -c ".read sql/schema/001_base_tables.sql"
+duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.sql"
+```
+
+## Conventions
+
+- `data/`, `db/`, `logs/`, `tmp/` are local runtime directories — never commit data files.
+- SQL files use numeric prefixes for deterministic execution order: `001_`, `010_`, `020_`, etc.
+- All scripts must be idempotent (safe to rerun).
+- Raw source files in `data/raw/` are immutable — transformations happen downstream.
+- Prefer SQL in `sql/transform/` over bash for data shaping logic.
+- Log ETL runs to `logs/` with timestamps.
+
+## Out of Scope (Current)
+
+- FEC API ingestion (documented but not implemented)
+- Scheduled/automated runs (manual execution only for now)

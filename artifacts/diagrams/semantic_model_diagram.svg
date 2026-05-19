@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="#333"/>
+  <text x="400" y="50" fill="#fff" font-size="20" text-anchor="middle">Semantic Model Diagram</text>
+  <!-- Fact Tables -->
+  <rect x="50" y="100" width="200" height="50" fill="#555" stroke="#000" stroke-width="2"/>
+  <text x="150" y="130" fill="#fff" font-size="14" text-anchor="middle">Contributions Fact Table</text>
+  <rect x="300" y="100" width="200" height="50" fill="#555" stroke="#000" stroke-width="2"/>
+  <text x="400" y="130" fill="#fff" font-size="14" text-anchor="middle">Disbursements Fact Table</text>
+  <rect x="550" y="100" width="200" height="50" fill="#555" stroke="#000" stroke-width="2"/>
+  <text x="650" y="130" fill="#fff" font-size="14" text-anchor="middle">Transfers Fact Table</text>
+  <!-- Dimensions -->
+  <rect x="50" y="200" width="200" height="50" fill="#333" stroke="#000" stroke-width="2"/>
+  <text x="150" y="230" fill="#fff" font-size="14" text-anchor="middle">Candidate Dimension</text>
+  <rect x="300" y="200" width="200" height="50" fill="#333" stroke="#000" stroke-width="2"/>
+  <text x="400" y="230" fill="#fff" font-size="14" text-anchor="middle">Committee Dimension</text>
+  <rect x="550" y="200" width="200" height="50" fill="#333" stroke="#000" stroke-width="2"/>
+  <text x="650" y="230" fill="#fff" font-size="14" text-anchor="middle">Election Dimension</text>
+  <!-- Additional Dimensions -->
+  <rect x="50" y="300" width="200" height="50" fill="#333" stroke="#000" stroke-width="2"/>
+  <text x="150" y="330" fill="#fff" font-size="14" text-anchor="middle">Time Dimension</text>
+  <rect x="300" y="300" width="200" height="50" fill="#333" stroke="#000" stroke-width="2"/>
+  <text x="400" y="330" fill="#fff" font-size="14" text-anchor="middle">Party Dimension</text>
+  <rect x="550" y="300" width="200" height="50" fill="#333" stroke="#000" stroke-width="2"/>
+  <text x="650" y="330" fill="#fff" font-size="14" text-anchor="middle">Transaction Code Dimension</text>
+</svg>

@@ -1,0 +1,4 @@
+{
+  "environment": "Development",
+  "dataSource": "path/to/your/data/source"
+}

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FEC Data Normalization and PowerBI Model Standards</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        a {
+            color: #007BFF;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+<h1>FEC Data Normalization and PowerBI Model Standards</h1>
+<p>This document outlines the established standards for normalizing FEC data and creating a PowerBI-friendly semantic model. The goal is to unify the FEC&rsquo;s disparate naming conventions and data structures into a consistent, readable, and performant model.</p>
+
+<h2>1. Snowflake Schema Overview</h2>
+<p>The snowflake schema is a logical arrangement of tables in a database that supports efficient querying and reporting. It consists of:</p>
+<ul>
+    <li><strong>Dimension Tables (Entities)</strong>: Provide descriptive context for facts.</li>
+    <li><strong>Fact Tables</strong>: Store measurable events or transactions.</li>
+</ul>
+<p>This schema is ideal for PowerBI, enabling clear relationships and optimized performance.</p>
+
+<h2>2. Dimension Tables (Entities)</h2>
+<p>Dimension tables represent entities in the database schema. These tables provide descriptive context for the facts stored in fact tables. Examples include:</p>
+<ul>
+    <li><strong>Candidate Dimension</strong>: Contains detailed information about candidates, such as name, party affiliation, and state.</li>
+    <li><strong>Committee Dimension</strong>: Includes committee names, types, and associated candidates.</li>
+    <li><strong>Election Dimension</strong>: Defines election years, types (e.g., general, primary), and associated offices.</li>
+    <li><strong>Filing Dimension</strong>: Tracks filing dates, types, and associated committees.</li>
+    <li><strong>Time Dimension</strong>: Organizes time data based on the FEC&rsquo;s 2-year election cycle concept, including attributes such as cycle, year, quarter, month, week, and day, to support time-based analysis and reporting.</li>
+</ul>
+
+<h2>3. Fact Tables</h2>
+<p>Fact tables represent measurable events or transactions. These tables store the facts (metrics) and link to dimension tables through foreign keys. Examples include:</p>
+<ul>
+    <li><strong>Contributions Fact Table</strong>: Stores contribution amounts, dates, and links to Candidate, Committee, and Election dimensions.</li>
+    <li><strong>Disbursements Fact Table</strong>: Combines all disbursement and expenditure data, storing amounts, dates, and links to Candidate, Committee, and Filing dimensions.</li>
+    <li><strong>Transfers Fact Table</strong>: Tracks fund transfers between committees, including amounts, dates, and links to both source and destination committees.</li>
+</ul>
+
+<h2>4. Standardized Table Names for Bulk CSV Imports</h2>
+<p>Bulk files have names like <code>itcont.txt</code>, <code>cn.txt</code>, <code>pas2.txt</code>, etc. These are renamed to meaningful names in the semantic model.</p>
+<h3>PowerBI and DuckDB Table Names</h3>
+<table border="1">
+<thead>
+<tr>
+<th>PowerBI / Duckdb Table Name</th>
+<th>Source and (Examples for 2026 cycle)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Candidate</code></td>
+<td><code>cn.txt in cn26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/cn26.zip">2026 ZIP</a>)</td>
+</tr>
+<tr>
+<td><code>Committee</code></td>
+<td><code>cm.txt in cm26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/cm26.zip">2026 ZIP</a>)</td>
+</tr>
+<tr>
+<td><code>Links</code></td>
+<td><code>ccl.txt (candidate committee links)</code></td>
+</tr>
+<tr>
+<td><code>Contributions</code></td>
+<td><code>itcont.txt</code></td>
+</tr>
+<tr>
+<td><code>Disbursements and Expenditures</code></td>
+<td><code>pas226.zip</code> (includes both disbursements and independent expenditures)</td>
+</tr>
+</tbody>
+</table>
+<p>These names ensure compatibility with both PowerBI and DuckDB, leveraging DuckDB&rsquo;s high-performance columnar format for efficient querying.</p>
+
+<h2>5. Standardized Column Names Across All Sources</h2>
+<p>The FEC mixes column naming conventions:</p>
+<ul>
+<li><code>cand_id</code>, <code>candidate_id</code>, <code>CAND_ID</code></li>
+<li><code>cmte_id</code>, <code>committee_id</code>, <code>committeeid</code></li>
+<li><code>transaction_amt</code>, <code>amount</code>, <code>TRANSACTION_AMT</code></li>
+<li><code>receipt_date</code>, <code>date</code>, <code>TRANSACTION_DT</code></li>
+</ul>
+<h3>Column Naming Rules</h3>
+<ul>
+<li>Use <code>snake_case</code> or <code>camelCase</code> (PowerBI works well with either).</li>
+<li>Use full words, not abbreviations.</li>
+<li>Apply consistent prefixes for foreign keys.</li>
+</ul>
+<h3>Canonical Column Names</h3>
+<table border="1">
+<thead>
+<tr>
+<th>Canonical Name</th>
+<th>Example Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>candidate_id</code></td>
+<td>Foreign key for candidates</td>
+</tr>
+<tr>
+<td><code>committee_id</code></td>
+<td>Foreign key for committees</td>
+</tr>
+<tr>
+<td><code>transaction_id</code></td>
+<td>Unique transaction identifier</td>
+</tr>
+<tr>
+<td><code>transaction_date</code></td>
+<td>Date of transaction</td>
+</tr>
+<tr>
+<td><code>transaction_amount</code></td>
+<td>Amount of transaction</td>
+</tr>
+<tr>
+<td><code>employer_name</code></td>
+<td>Contributor&rsquo;s employer</td>
+</tr>
+<tr>
+<td><code>occupation</code></td>
+<td>Contributor&rsquo;s occupation</td>
+</tr>
+<tr>
+<td><code>election_cycle</code></td>
+<td>Election cycle</td>
+</tr>
+<tr>
+<td><code>report_type</code></td>
+<td>Type of report filed</td>
+</tr>
+<tr>
+<td><code>filing_id</code></td>
+<td>Unique filing identifier</td>
+</tr>
+</tbody>
+</table>
+<p>This makes DAX and Power Query dramatically easier to read.</p>
+
+<h2>6. Conclusion</h2>
+<p>This document provides a comprehensive approach to normalizing FEC data for PowerBI. By adopting a snowflake schema, standardizing table and column names, and ensuring compatibility with DuckDB, the ETL workflows and PowerBI modeling are optimized for clarity and performance.</p>
+</body>
+</html>

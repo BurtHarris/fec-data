@@ -27,3 +27,6 @@
 # Optional local environment files
 .env
 .env.*
+
+# Node dependencies
+node_modules/

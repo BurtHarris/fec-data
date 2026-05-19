@@ -25,7 +25,7 @@ This repository is set up for an ETL workflow that downloads Federal Election Co
 - bash scripts for repeatable ETL jobs
 - Windows host (Git Bash or WSL recommended for bash scripts)
 
-## Suggested Project Structure
+## Project Structure
 
 ```text
 fec-data/
@@ -69,6 +69,12 @@ curl --version
 bash --version
 ```
 
+If PowerShell resolves `bash` to WSL on your machine, use the bundled PowerShell wrapper to force Git Bash for fetch jobs:
+
+```powershell
+.\scripts\fetch\fetch_bulk.ps1 2020
+```
+
 ### Optional: Provision or Update Tools with winget configure
 
 This repository includes a Windows package provisioning file at `.config/configuration.winget` (the [Microsoft-recommended naming convention](https://learn.microsoft.com/en-us/windows/package-manager/configuration/create#file-naming-convention)).
@@ -103,6 +109,12 @@ duckdb db/fec.duckdb ".databases"
 
 ```bash
 curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
+```
+
+For the existing FEC bulk downloader on Windows PowerShell:
+
+```powershell
+.\scripts\fetch\fetch_bulk.ps1 2020
 ```
 
 4. Load and transform with DuckDB:

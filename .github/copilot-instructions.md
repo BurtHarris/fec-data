@@ -98,6 +98,11 @@ When a response would require multiple sections of markdown prose (roughly 300+ 
 | Format explainers, concept walkthroughs | `artifacts/analysis/` |
 | Per-run pipeline reports (row counts, timing) | `artifacts/reports/` (not committed) |
 
+## Agent Instructions Update
+
+- **Browsing FEC Data**: The FEC provides an interactive data browsing interface at [FEC Browse Data](https://www.fec.gov/data/browse-data). This should be referenced early in any HTML file summarizing FEC data sources.
+- **Importing FEC Data in ETL Projects**: Ensure that the hierarchical organization of the FEC data is reflected in ETL workflows. This includes maintaining consistency with the structure of the FEC browse data page.
+
 ## Out of Scope (Current)
 
 - FEC API ingestion (documented but not implemented)

@@ -170,13 +170,19 @@ function Invoke-DuckDbSqlBatch {
         return
     }
 
-    foreach ($sqlFile in $sqlFiles) {
-        Write-Host "Running $StepName file: $($sqlFile.Name)"
-        $sqlPath = $sqlFile.FullName.Replace('\\', '/')
-        & duckdb $DuckDbPath -c ".read '$sqlPath'"
-        if ($LASTEXITCODE -ne 0) {
-            throw "DuckDB failed while running $($sqlFile.FullName)"
+    $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Path
+    Push-Location $repoRoot
+    try {
+        foreach ($sqlFile in $sqlFiles) {
+            Write-Host "Running $StepName file: $($sqlFile.Name)"
+            $sqlPath = $sqlFile.FullName.Replace('\\', '/')
+            & duckdb $DuckDbPath -c ".read '$sqlPath'"
+            if ($LASTEXITCODE -ne 0) {
+                throw "DuckDB failed while running $($sqlFile.FullName)"
+            }
         }
+    } finally {
+        Pop-Location
     }
 }
 

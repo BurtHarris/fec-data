@@ -28,6 +28,8 @@ param(
 
     [switch]$Force,
 
+    [string]$LandingZone = "raw",
+
     [string]$SourceZone = "raw",
 
     [string]$TargetZone = "staging",
@@ -39,7 +41,7 @@ $runAll = (-not $Retrieve -and -not $Transform -and -not $Load)
 
 if ($runAll -or $Retrieve) {
     Write-Host "[ETL] Retrieve step"
-    & "$PSScriptRoot/Update-RawFile.ps1" -Cycle $Cycle -Files $Files -Force:$Force
+    & "$PSScriptRoot/Update-RawFile.ps1" -Cycle $Cycle -Files $Files -LandingZone $LandingZone -Force:$Force
     if ($LASTEXITCODE -ne 0) {
         throw "Retrieve step failed."
     }

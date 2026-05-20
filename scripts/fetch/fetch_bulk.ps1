@@ -14,6 +14,9 @@ Archive file prefixes to fetch.
 
 .PARAMETER Force
 Bypass conditional cache checks.
+
+.PARAMETER LandingZone
+Data landing folder under cycle. Default is raw.
 #>
 
 [CmdletBinding()]
@@ -30,6 +33,8 @@ param(
 
     [string[]]$Files = @("weball", "indiv", "oppexp", "pas2", "oth", "cm", "cn"),
 
+    [string]$LandingZone = "raw",
+
     [switch]$Force,
 
     [switch]$Sequential
@@ -38,4 +43,4 @@ param(
 $modulePath = Join-Path -Path $PSScriptRoot -ChildPath "../modules/ETLModule.psd1"
 Import-Module -Force $modulePath
 
-Invoke-FecCycleRawSync -Cycle $Cycle -FilePrefixes $Files -Force:$Force -Sequential:$Sequential
+Invoke-FecCycleRawSync -Cycle $Cycle -FilePrefixes $Files -LandingZone $LandingZone -Force:$Force -Sequential:$Sequential

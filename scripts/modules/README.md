@@ -17,6 +17,10 @@ Import-Module .\scripts\modules\ETLModule.psd1 -Force
 Invoke-FecCycleRawSync -Cycle 2024
 Expand-EtlCycleArchives -Cycle 2024
 Invoke-EtlCycleLoad -Cycle 2024 -DuckDbPath db/fec.duckdb
+
+# Optional medallion-style folders
+Invoke-FecCycleRawSync -Cycle 2024 -LandingZone bronze
+Expand-EtlCycleArchives -Cycle 2024 -SourceZone bronze -TargetZone silver
 ```
 
 ## Script wrappers
@@ -25,6 +29,9 @@ Invoke-EtlCycleLoad -Cycle 2024 -DuckDbPath db/fec.duckdb
 - `scripts/transform/extract_zips.ps1`: transform wrapper for archive extraction.
 - `scripts/load/invoke_load_cycle.ps1`: load wrapper for DuckDB SQL batches.
 - `scripts/run_etl_cycle.ps1`: one command to run retrieve/transform/load for a cycle.
+
+The defaults preserve existing paths (`raw` -> `staging`), but wrappers now accept
+zone parameters to support naming transitions like `bronze` -> `silver`.
 
 ## `.psm1` vs `.psd1`
 

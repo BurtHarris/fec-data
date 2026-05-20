@@ -18,6 +18,9 @@ Forces download without conditional cache checks.
 .PARAMETER Sequential
 Reserved for future parallelization control; current implementation runs in order for easier debugging.
 
+.PARAMETER LandingZone
+Data landing folder under cycle. Default is raw.
+
 .EXAMPLE
 .\scripts\Update-RawFile.ps1 -Cycle 2024
 #>
@@ -36,6 +39,8 @@ param(
 
     [string[]]$Files = @("weball", "indiv", "oppexp", "pas2", "oth", "cm", "cn"),
 
+    [string]$LandingZone = "raw",
+
     [switch]$Force,
 
     [switch]$Sequential
@@ -44,4 +49,4 @@ param(
 $modulePath = Join-Path -Path $PSScriptRoot -ChildPath "modules/ETLModule.psd1"
 Import-Module -Force $modulePath
 
-Invoke-FecCycleRawSync -Cycle $Cycle -FilePrefixes $Files -Force:$Force -Sequential:$Sequential
+Invoke-FecCycleRawSync -Cycle $Cycle -FilePrefixes $Files -LandingZone $LandingZone -Force:$Force -Sequential:$Sequential

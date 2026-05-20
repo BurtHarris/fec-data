@@ -89,6 +89,8 @@ function Invoke-FecCycleRawSync {
 
         [string[]]$FilePrefixes = @("weball", "indiv", "oppexp", "pas2", "oth", "cm", "cn"),
 
+        [string]$LandingZone = "raw",
+
         [switch]$Force,
 
         [switch]$Sequential
@@ -98,7 +100,7 @@ function Invoke-FecCycleRawSync {
     $archiveNames = $FilePrefixes | ForEach-Object { "$_$yy" }
     $baseUrl = "https://www.fec.gov/files/bulk-downloads/$Cycle"
 
-    Sync-EtlArchiveSet -Cycle $Cycle -BaseUrl $baseUrl -ArchiveNames $archiveNames -LandingZone "raw" -Force:$Force -Sequential:$Sequential
+    Sync-EtlArchiveSet -Cycle $Cycle -BaseUrl $baseUrl -ArchiveNames $archiveNames -LandingZone $LandingZone -Force:$Force -Sequential:$Sequential
 }
 
 function Expand-EtlCycleArchives {

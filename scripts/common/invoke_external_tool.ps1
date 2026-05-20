@@ -15,7 +15,7 @@ function New-LogSession {
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $sessionId = '{0}-{1}-{2}' -f $OperationName, $timestamp, ([Guid]::NewGuid().ToString('N').Substring(0, 8))
+    $sessionId = '{0}-{1}-{2}' -f $OperationName, $timestamp, ([Guid]::NewGuid().ToString('N'))
     $logFile = Join-Path $logsDir "$sessionId.jsonl"
 
     New-Item -ItemType File -Path $logFile -Force | Out-Null
@@ -123,7 +123,6 @@ function Invoke-ExternalTool {
         throw $msg
     }
 
-    $argumentText = ConvertTo-ProcessArguments -Arguments $Arguments
     Write-StructuredLog -Session $Session -Level 'INFO' -Message "Starting $ToolName" -Tool $ToolName -Metadata @{
         command = $resolvedToolPath
         args    = $Arguments
@@ -134,7 +133,14 @@ function Invoke-ExternalTool {
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $resolvedToolPath
-    $startInfo.Arguments = $argumentText
+    if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
+        foreach ($argument in $Arguments) {
+            [void]$startInfo.ArgumentList.Add($argument)
+        }
+    }
+    else {
+        $startInfo.Arguments = ConvertTo-ProcessArguments -Arguments $Arguments
+    }
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.UseShellExecute = $false

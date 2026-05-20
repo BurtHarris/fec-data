@@ -33,7 +33,8 @@ try {
         logFile   = $session.LogFile
     }
 
-    $result = Invoke-ExternalTool -ToolPath $gitBash -Arguments @($scriptPath) + $Arguments -Session $session -ToolName 'bash' -Activity 'Running fetch_bulk.sh' -ThrowOnError:$false
+    $toolArguments = @($scriptPath) + $Arguments
+    $result = Invoke-ExternalTool -ToolPath $gitBash -Arguments $toolArguments -Session $session -ToolName 'bash' -Activity 'Running fetch_bulk.sh' -ThrowOnError:$false
     if ($result.ExitCode -ne 0) {
         Write-StructuredLog -Session $session -Level 'ERROR' -Message "fetch_bulk.sh exited with code $($result.ExitCode)" -Tool 'bash'
         exit $result.ExitCode

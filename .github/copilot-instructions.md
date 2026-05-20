@@ -10,6 +10,7 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 
 - DuckDB CLI — local analytics database and SQL transforms
 - curl — bulk file downloads
+- 7-Zip CLI — unpacking downloaded zip files
 - bash — ETL orchestration scripts
 - jq — JSON parsing in shell pipelines
 - Windows (Git Bash or WSL for bash; PowerShell for git/admin tasks)

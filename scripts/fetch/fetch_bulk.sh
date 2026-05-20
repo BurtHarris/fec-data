@@ -48,6 +48,8 @@ BASE_URL="https://www.fec.gov/files/bulk-downloads/${CYCLE}"
 DEST="data/raw/${CYCLE}"
 
 mkdir -p "${DEST}"
+BY_DATE_DEST="${DEST}/by_date"
+mkdir -p "${BY_DATE_DEST}"
 
 FILES=(
     "weball${YY}"   # Candidate summary totals
@@ -84,18 +86,38 @@ for NAME in "${FILES[@]}"; do
 
     echo "[GET]   ${NAME}.zip"
     curl -fL --progress-bar -o "${ZIP}" "${URL}"
-
-    echo "[UNZIP] ${NAME}.zip"
-    unzip -o -q -d "${DEST}" "${ZIP}"
-
     printf '%s\n' "${REMOTE_SIG}" > "${META}"
-
-    echo "[OK]    ${NAME} done"
+    echo "[OK]    ${NAME} downloaded"
     echo ""
 
     # Optional: Remove ZIP file after extraction
     # rm -f "${ZIP}"
 done
+
+# Add support for incremental updates in by_date subfolder
+ITCONT_FILES=(
+    "itcont_${CYCLE}_20200101_20200131.txt"
+    "itcont_${CYCLE}_20200201_20200229.txt"
+)
+
+for FILE in "${ITCONT_FILES[@]}"; do
+    URL="${BASE_URL}/by_date/${FILE}"
+    DEST_FILE="${BY_DATE_DEST}/${FILE}"
+
+    if [[ -f "${DEST_FILE}" ]]; then
+        echo "[SKIP] ${FILE} already exists"
+        continue
+    fi
+
+    echo "[GET] ${FILE}"
+    curl -fL --progress-bar -o "${DEST_FILE}" "${URL}"
+    echo "[OK] ${FILE} downloaded"
+    echo ""
+done
+
+# Log the downloaded files
+echo "All incremental files ready in ${BY_DATE_DEST}/"
+ls -lh "${BY_DATE_DEST}/"
 
 echo "All files ready in ${DEST}/"
 ls -lh "${DEST}/"

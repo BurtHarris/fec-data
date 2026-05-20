@@ -20,6 +20,8 @@ param (
     [int]$Cycle
 )
 
+$7zipPath = "C:\Program Files\7-Zip\7z.exe"  # Adjust path if 7-Zip is installed elsewhere
+
 # Derive the directory path from the cycle
 $Directory = Join-Path -Path "data/raw" -ChildPath $Cycle
 
@@ -29,36 +31,31 @@ if (-Not (Test-Path -Path $Directory -PathType Container)) {
     exit 1
 }
 
-# Extract and process each ZIP file in the directory
-Get-ChildItem -Path $Directory -Filter "*.zip" | ForEach-Object {
-    $zipFile = $_
-    Write-Host "[UNZIP] Extracting $($zipFile.Name)"
+# Derive the staging directory path
+$stagingDir = Join-Path -Path "data/staging" -ChildPath $Cycle
 
-    # Extract ZIP contents to the same directory
-    try {
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipFile.FullName, $Directory)
-    } catch {
-        Write-Error "Failed to extract $($zipFile.Name): $_"
-        return
-    }
+# Ensure the staging directory exists
+if (-Not (Test-Path -Path $stagingDir)) {
+    New-Item -ItemType Directory -Path $stagingDir | Out-Null
+}
 
-    # Determine the staging directory path
-    $stagingDir = Join-Path -Path "data/staging" -ChildPath $Cycle
+# Extract all ZIP files in the directory at once using 7-Zip with multi-threading
+$7zipPath = "C:\Program Files\7-Zip\7z.exe"  # Adjust path if 7-Zip is installed elsewhere
+if (-Not (Test-Path -Path $7zipPath)) {
+    Write-Error "7-Zip executable not found at $7zipPath. Please ensure 7-Zip is installed."
+    exit 1
+}
 
-    # Ensure the staging directory exists
-    if (-Not (Test-Path -Path $stagingDir)) {
-        New-Item -ItemType Directory -Path $stagingDir | Out-Null
-    }
+# Use wildcard to process all ZIP files in the directory
+$zipFiles = Join-Path -Path $Directory -ChildPath "*.zip"
 
-    Write-Host "[MOVE] Moving extracted files to $stagingDir"
-    # Move all extracted files to the staging directory, excluding .meta files
-    Get-ChildItem -Path $Directory -File | Where-Object { $_.Extension -ne ".zip" -and $_.Extension -ne ".meta" } | ForEach-Object {
-        Move-Item -Path $_.FullName -Destination $stagingDir -Force
-    }
-
-    Write-Host "[CLEANUP] Cleaning up extracted files from $($zipFile.Name)"
-    # Clean up extracted files from the raw directory, excluding .meta files
-    Get-ChildItem -Path $Directory -File | Where-Object { $_.Extension -ne ".zip" -and $_.Extension -ne ".meta" } | Remove-Item -Force
+$arguments = "x `"$zipFiles`" -o`"$stagingDir`" -y -mmt"
+try {
+    Write-Host "[UNZIP] Extracting all ZIP files in $Directory using multi-threading"
+    Start-Process -FilePath $7zipPath -ArgumentList $arguments -NoNewWindow -Wait -ErrorAction Stop
+} catch {
+    Write-Error "Failed to extract ZIP files: $_"
+    exit 1
 }
 
 # Cross-check .meta files against ZIP files

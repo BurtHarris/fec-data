@@ -1,0 +1,11 @@
+{
+    "terminal.integrated.env.windows": {
+        "PATH": "${workspaceFolder}/scripts:${env:PATH}"
+    },
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "chat.tools.terminal.autoApprove": {
+        "git checkout": true,
+        ".\\scripts\\Update-RawFile.ps1": true,
+        "git add": true
+    }
+}

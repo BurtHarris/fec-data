@@ -1,0 +1,3 @@
+# Archived script
+# Original generate_diagram.sh
+...existing code...

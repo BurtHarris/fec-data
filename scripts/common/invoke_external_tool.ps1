@@ -80,7 +80,7 @@ function ConvertTo-ProcessArguments {
     )
 
     # Fallback for hosts that do not expose ProcessStartInfo.ArgumentList (for example, Windows PowerShell on .NET Framework).
-    # This is intentionally minimal and only used in that compatibility path.
+    # This is intentionally minimal and only used in that compatibility path for simple argument values.
     return ($Arguments | ForEach-Object {
             if ($_ -match '[\s"]') {
                 '"' + ($_ -replace '"', '""') + '"'

@@ -52,19 +52,22 @@ if (-Not (Test-Path -Path $7zipPath)) {
     exit 1
 }
 
-# Use wildcard to process all ZIP files in the directory
-$zipFiles = Join-Path -Path $Directory -ChildPath "*.zip"
-
 # 7-Zip requires the output directory flag and path in one argument ("-o<path>").
-# 7-Zip accepts wildcard inputs directly, so the *.zip pattern is passed as-is.
-$arguments = @('x', $zipFiles, "-o$stagingDir", '-y', '-mmt')
-try {
-    Write-StructuredLog -Session $session -Level 'INFO' -Message "Extracting all ZIP files in $Directory using multi-threading" -Tool '7zip'
-    [void](Invoke-7Zip -SevenZipPath $7zipPath -Arguments $arguments -Session $session)
+$zipFiles = Get-ChildItem -Path $Directory -Filter '*.zip' -File
+if ($zipFiles.Count -eq 0) {
+    Write-StructuredLog -Session $session -Level 'WARN' -Message "No ZIP files found in $Directory. Skipping extraction." -Tool '7zip'
 }
-catch {
-    Write-StructuredLog -Session $session -Level 'ERROR' -Message "Failed to extract ZIP files: $_" -Tool '7zip'
-    exit 1
+else {
+    $zipFilePaths = $zipFiles | ForEach-Object { $_.FullName }
+    $arguments = @('x') + $zipFilePaths + @("-o$stagingDir", '-y', '-mmt')
+    try {
+        Write-StructuredLog -Session $session -Level 'INFO' -Message "Extracting $($zipFiles.Count) ZIP file(s) in $Directory using multi-threading" -Tool '7zip'
+        [void](Invoke-7Zip -SevenZipPath $7zipPath -Arguments $arguments -Session $session)
+    }
+    catch {
+        Write-StructuredLog -Session $session -Level 'ERROR' -Message "Failed to extract ZIP files: $_" -Tool '7zip'
+        exit 1
+    }
 }
 
 # Cross-check .meta files against ZIP files

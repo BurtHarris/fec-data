@@ -70,7 +70,7 @@ catch {
 Write-StructuredLog -Session $session -Level 'INFO' -Message 'Verifying .meta files against ZIP files'
 Get-ChildItem -Path $Directory -Filter "*.meta" | ForEach-Object {
     $metaFile = $_
-    $zipFileName = ([System.IO.Path]::GetFileNameWithoutExtension($metaFile.Name)) + '.zip'
+    $zipFileName = [System.IO.Path]::ChangeExtension($metaFile.Name, '.zip')
     $zipFile = Join-Path -Path $Directory -ChildPath $zipFileName
     Write-StructuredLog -Session $session -Level 'INFO' -Message "Meta file: $($metaFile.FullName)"
     Write-StructuredLog -Session $session -Level 'INFO' -Message "Expected ZIP file: $zipFile"

@@ -1,15 +1,15 @@
--- Baseline snapshot for indiv using raw zip files.
+-- Baseline snapshot for indiv using bronze zip files.
 -- For large-table safety in early phases, this records cycle/source availability
 -- with row_count left NULL until incremental counting is introduced.
 
 CREATE OR REPLACE TEMP TABLE _indiv_counts AS
 SELECT
-    CAST(NULLIF(regexp_extract(replace(file, chr(92), '/'), 'data/([0-9]{4})/raw/indiv[0-9]{2}\.zip$', 1), '') AS INTEGER) AS cycle,
+    CAST(NULLIF(regexp_extract(replace(file, chr(92), '/'), 'data/([0-9]{4})/bronze/indiv[0-9]{2}\.zip$', 1), '') AS INTEGER) AS cycle,
     CAST(NULL AS BIGINT) AS row_count,
     min(replace(file, chr(92), '/')) AS source_path,
     'raw-zip-baseline' AS load_mode,
     now() AS loaded_at
-FROM glob('data/*/raw/indiv*.zip')
+FROM glob('data/*/bronze/indiv*.zip')
 GROUP BY 1;
 
 DELETE FROM fec_indiv_snapshot

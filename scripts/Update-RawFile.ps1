@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-Updates cycle-scoped raw archives for the ETL pipeline.
+Updates cycle-scoped bronze archives for the ETL pipeline.
 
 .DESCRIPTION
-Imports the local ETL module and runs cycle-based raw archive sync.
-Directory layout remains year-first: data/{cycle}/raw.
+Imports the local ETL module and runs cycle-based bronze archive sync.
+Directory layout remains year-first: data/{cycle}/bronze.
 
 .PARAMETER Cycle
 The election cycle year (for example: 2024).
@@ -39,7 +39,7 @@ param(
 
     [string[]]$Files = @("weball", "indiv", "oppexp", "pas2", "oth", "cm", "cn"),
 
-    [string]$LandingZone = "raw",
+    [string]$LandingZone = "bronze",
 
     [switch]$Force,
 

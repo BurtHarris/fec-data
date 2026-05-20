@@ -194,7 +194,7 @@ Create a `time` dimension table to enable reporting over longer periods. Include
 ### ETL Workflow for Loading Data
 1. **Extract**:
    - Download bulk data files for each cycle.
-   - Parse files into staging tables in DuckDB.
+   - Parse files into silver tables in DuckDB.
 
 2. **Transform**:
    - Normalize column names (e.g., `cand_id` → `candidate_id`).

@@ -1,14 +1,14 @@
--- Load per-cycle row counts for committee master files from staging.
--- Reads all available cycle files at data/{cycle}/staging/cm.txt.
+-- Load per-cycle row counts for committee master files from silver.
+-- Reads all available cycle files at data/{cycle}/silver/cm.txt.
 
 CREATE OR REPLACE TEMP TABLE _cm_counts AS
 SELECT
-    CAST(NULLIF(regexp_extract(replace(filename, chr(92), '/'), '(^|/)data/([0-9]{4})/staging/cm\.txt$', 2), '') AS INTEGER) AS cycle,
+    CAST(NULLIF(regexp_extract(replace(filename, chr(92), '/'), '(^|/)data/([0-9]{4})/silver/cm\.txt$', 2), '') AS INTEGER) AS cycle,
     count(*) AS row_count,
     min(filename) AS source_path,
     now() AS loaded_at
 FROM read_csv_auto(
-    'data/*/staging/cm.txt',
+    'data/*/silver/cm.txt',
     delim='|',
     header=false,
     all_varchar=true,

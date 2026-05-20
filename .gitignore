@@ -1,18 +1,18 @@
 # FEC ETL local data and artifacts
 
 # Keep ETL directory structure, but ignore actual data files
-/data/raw/*
-!/data/raw/.gitkeep
-/data/staging/*
-!/data/staging/.gitkeep
-/data/processed/*
-!/data/processed/.gitkeep
+/data/bronze/*
+!/data/bronze/.gitkeep
+/data/silver/*
+!/data/silver/.gitkeep
+/data/gold/*
+!/data/gold/.gitkeep
 
 # Exclude everything under data and db directories
 /data/*
-!/data/raw/.gitkeep
-!/data/staging/.gitkeep
-!/data/processed/.gitkeep
+!/data/bronze/.gitkeep
+!/data/silver/.gitkeep
+!/data/gold/.gitkeep
 /db/*
 !/db/.gitkeep
 

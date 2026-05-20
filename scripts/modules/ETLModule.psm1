@@ -12,7 +12,7 @@ function Sync-EtlArchiveSet {
         [Parameter(Mandatory = $true)]
         [string[]]$ArchiveNames,
 
-        [string]$LandingZone = "raw",
+        [string]$LandingZone = "bronze",
 
         [string]$DataRoot = "data",
 
@@ -89,7 +89,7 @@ function Invoke-FecCycleRawSync {
 
         [string[]]$FilePrefixes = @("weball", "indiv", "oppexp", "pas2", "oth", "cm", "cn"),
 
-        [string]$LandingZone = "raw",
+        [string]$LandingZone = "bronze",
 
         [switch]$Force,
 
@@ -109,9 +109,9 @@ function Expand-EtlCycleArchives {
         [Parameter(Mandatory = $true)]
         [int]$Cycle,
 
-        [string]$SourceZone = "raw",
+        [string]$SourceZone = "bronze",
 
-        [string]$TargetZone = "staging",
+        [string]$TargetZone = "silver",
 
         [string]$DataRoot = "data",
 

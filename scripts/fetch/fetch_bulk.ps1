@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-Downloads and refreshes cycle-scoped raw archives used by ETL.
+Downloads and refreshes cycle-scoped bronze archives used by ETL.
 
 .DESCRIPTION
 Lightweight wrapper that imports the shared ETL module and invokes
-the cycle raw sync command.
+the cycle bronze sync command.
 
 .PARAMETER Cycle
 Election cycle year (for example: 2024).
@@ -16,7 +16,7 @@ Archive file prefixes to fetch.
 Bypass conditional cache checks.
 
 .PARAMETER LandingZone
-Data landing folder under cycle. Default is raw.
+Data landing folder under cycle. Default is bronze.
 #>
 
 [CmdletBinding()]
@@ -33,7 +33,7 @@ param(
 
     [string[]]$Files = @("weball", "indiv", "oppexp", "pas2", "oth", "cm", "cn"),
 
-    [string]$LandingZone = "raw",
+    [string]$LandingZone = "bronze",
 
     [switch]$Force,
 

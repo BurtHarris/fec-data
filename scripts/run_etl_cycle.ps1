@@ -28,11 +28,11 @@ param(
 
     [switch]$Force,
 
-    [string]$LandingZone = "raw",
+    [string]$LandingZone = "bronze",
 
-    [string]$SourceZone = "raw",
+    [string]$SourceZone = "bronze",
 
-    [string]$TargetZone = "staging",
+    [string]$TargetZone = "silver",
 
     [string]$DuckDbPath = "db/fec.duckdb"
 )

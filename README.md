@@ -32,9 +32,9 @@ fec-data/
   .config/
     configuration.winget  # winget tool provisioning (Microsoft-recommended location)
   data/
-    raw/         # Downloaded source files (zip/csv/json)
-    staging/     # Unpacked and lightly normalized files
-    processed/   # Curated extracts and export-ready data
+    bronze/      # Downloaded source files (zip/csv/json)
+    silver/      # Unpacked and lightly normalized files
+    gold/        # Curated extracts and export-ready data
   db/
     fec.duckdb   # Main DuckDB database file (created at runtime)
   scripts/
@@ -50,6 +50,13 @@ fec-data/
 ```
 
 Note: `data/`, local `db/` artifacts, `logs/`, and `tmp/` are intended for local runtime files and are git-ignored via `.gitignore` (folder placeholders are kept with `.gitkeep`).
+
+This project uses the **medallion architecture** pattern:
+- **Bronze** (raw ingestion): Downloaded FEC bulk data files (ZIP archives)
+- **Silver** (cleaned/standardized): Extracted and lightly normalized files
+- **Gold** (analytics-ready): Curated tables and refined extracts
+
+For more on medallion architecture, see [Databricks' medallion architecture documentation](https://www.databricks.com/blog/2022/06/24/use-the-medallion-multi-hop-architecture-to-build-data-lakehouses-in-databricks.html).
 
 ## Prerequisites (Windows)
 
@@ -108,7 +115,7 @@ duckdb db/fec.duckdb ".databases"
 3. Add a fetch script in `scripts/fetch/` (example command pattern):
 
 ```bash
-curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
+curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/bronze/indiv24.zip
 ```
 
 For the existing FEC bulk downloader on Windows PowerShell:
@@ -117,16 +124,18 @@ For the existing FEC bulk downloader on Windows PowerShell:
 .\scripts\fetch\fetch_bulk.ps1 2020
 ```
 
-4. Load and transform with DuckDB:
+4. Extract and transform with DuckDB:
 
 ```bash
-duckdb db/fec.duckdb -c ".read sql/schema/001_base_tables.sql"
-duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.sql"
+duckdb db/fec.duckdb -c ".read sql/schema/001_etl_base.sql"
+duckdb db/fec.duckdb -c ".read sql/transform/020_load_cm_snapshot.sql"
 ```
 
 ## Recommended Conventions
 
-- Keep raw source files immutable in `data/raw/`.
+- Keep bronze source files immutable in `data/bronze/`.
+- Extract to silver: `data/silver/`.
+- Load to gold: tables in DuckDB via `sql/transform/`.
 - Write all transformations as SQL in `sql/transform/` when possible.
 - Name SQL files with numeric prefixes for deterministic order:
   - `001_...sql`, `010_...sql`, `020_...sql`

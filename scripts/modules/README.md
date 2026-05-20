@@ -1,7 +1,7 @@
 # ETLModule
 
-This module provides reusable PowerShell ETL helpers with a cycle-first
-landing layout: `data/{cycle}/raw`.
+This module provides reusable PowerShell ETL helpers with the **medallion architecture** pattern.
+Default cycle-first landing layout: `data/{cycle}/bronze` (bronze zone).
 
 ## Exported commands
 
@@ -18,20 +18,19 @@ Invoke-FecCycleRawSync -Cycle 2024
 Expand-EtlCycleArchives -Cycle 2024
 Invoke-EtlCycleLoad -Cycle 2024 -DuckDbPath db/fec.duckdb
 
-# Optional medallion-style folders
+# Optional medallion zone parameters
 Invoke-FecCycleRawSync -Cycle 2024 -LandingZone bronze
 Expand-EtlCycleArchives -Cycle 2024 -SourceZone bronze -TargetZone silver
 ```
 
 ## Script wrappers
 
-- `scripts/Update-RawFile.ps1`: retrieve/update raw archives for one cycle.
-- `scripts/transform/extract_zips.ps1`: transform wrapper for archive extraction.
-- `scripts/load/invoke_load_cycle.ps1`: load wrapper for DuckDB SQL batches.
+- `scripts/Update-RawFile.ps1`: retrieve/update bronze archives for one cycle.
+- `scripts/transform/extract_zips.ps1`: transform wrapper for archive extraction from bronze to silver.
+- `scripts/load/invoke_load_cycle.ps1`: load wrapper for DuckDB SQL batches to create gold tables.
 - `scripts/run_etl_cycle.ps1`: one command to run retrieve/transform/load for a cycle.
 
-The defaults preserve existing paths (`raw` -> `staging`), but wrappers now accept
-zone parameters to support naming transitions like `bronze` -> `silver`.
+Default zone parameters use medallion naming: `bronze` (download) -> `silver` (extract) -> `gold` (load).
 
 ## `.psm1` vs `.psd1`
 

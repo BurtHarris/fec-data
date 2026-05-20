@@ -35,17 +35,26 @@
 <h2>Challenges in Naming Conventions</h2>
 <p>"Naming things" is a well-known challenge in software development, and the FEC data sources are no exception. The three access methods listed above often use inconsistent naming conventions, which can complicate data integration and analysis. To address this, it is often necessary to establish consistent naming conventions when working with tools like DuckDB and Power BI.</p>
 
+<h2>Medallion Architecture (Bronze-Silver-Gold)</h2>
+<p>This project follows the <strong>medallion architecture</strong> pattern for organizing data layers:</p>
+<ul>
+    <li><strong>Bronze</strong>: Immutable source files downloaded directly from the FEC bulk data portal. Stored in <code>data/bronze/</code>.</li>
+    <li><strong>Silver</strong>: Unpacked and lightly normalized files prepared for analysis. Stored in <code>data/silver/</code>.</li>
+    <li><strong>Gold</strong>: Curated and refined tables ready for reporting and visualization. Stored in <code>data/gold/</code>.</li>
+</ul>
+<p>For more background on medallion architecture, see <a href="https://www.databricks.com/blog/2022/06/24/use-the-medallion-multi-hop-architecture-to-build-data-lakehouses-in-databricks.html">Databricks' medallion architecture documentation</a>.</p>
+
 <h2>Directory Structure Overview</h2>
 <p>The FEC data is organized into the following structure to facilitate efficient ETL workflows and analysis:</p>
 <ul>
-    <li><strong>Raw Data</strong>: Immutable source files downloaded directly from the FEC bulk data portal. Stored in <code>data/raw/</code>.</li>
-    <li><strong>Staging Data</strong>: Unpacked and normalized files prepared for loading. Stored in <code>data/staging/</code>.</li>
-    <li><strong>Processed Data</strong>: Curated extracts ready for analysis. Stored in <code>data/processed/</code>.</li>
+    <li><strong>Bronze Data</strong>: Immutable source files downloaded directly from the FEC bulk data portal. Stored in <code>data/bronze/</code>.</li>
+    <li><strong>Silver Data</strong>: Unpacked and normalized files prepared for loading. Stored in <code>data/silver/</code>.</li>
+    <li><strong>Gold Data</strong>: Curated extracts ready for analysis. Stored in <code>data/gold/</code>.</li>
     <li><strong>Database</strong>: DuckDB files containing OLAP tables for longitudinal reporting. Stored in <code>db/</code>.</li>
     <li><strong>Logs</strong>: ETL run logs for debugging and auditing. Stored in <code>logs/</code>.</li>
     <li><strong>Temporary Files</strong>: Intermediate artifacts generated during ETL runs. Stored in <code>tmp/</code>.</li>
 </ul>
-<p>This structure ensures that raw data remains untouched, while transformations and analyses are performed downstream. It also aligns with best practices for reproducibility and data integrity.</p>
+<p>This structure ensures that bronze data remains untouched, while transformations and analyses are performed downstream through silver and gold layers. It also aligns with best practices for reproducibility and data integrity.</p>
 
 <h2>Schema Design and Mapping</h2>
 <p>To support both SQL/DuckDB operations and Power BI integration, the following schema-related directories are included:</p>

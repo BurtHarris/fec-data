@@ -27,9 +27,9 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 ```
 .config/                   # winget provisioning (Microsoft-recommended location)
   configuration.winget     # winget configure file
-data/raw/                  # Downloaded source files — git-ignored, not committed
-data/staging/              # Unpacked/normalized files — git-ignored
-data/processed/            # Curated extracts — git-ignored
+data/bronze/               # Downloaded source files — git-ignored, not committed
+data/silver/               # Unpacked/normalized files — git-ignored
+data/gold/                 # Curated extracts — git-ignored
 db/                        # DuckDB .duckdb files — git-ignored
 scripts/fetch/             # curl download scripts
 scripts/transform/         # bash preprocessing (awk/sed/jq)
@@ -64,7 +64,7 @@ duckdb db/fec.duckdb ".databases"
 
 Download a bulk file:
 ```bash
-curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
+curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/bronze/indiv24.zip
 ```
 
 Apply schema or transform SQL:
@@ -78,7 +78,7 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 1. `data/`, `db/`, `logs/`, `tmp/` are local runtime directories — never commit data files.
 2. SQL files use numeric prefixes for deterministic execution order: `001_`, `010_`, `020_`, etc.
 3. All scripts must be idempotent (safe to rerun).
-4. Raw source files in `data/raw/` are immutable — transformations happen downstream.
+4. Bronze source files in `data/bronze/` are immutable — transformations happen downstream.
 5. Use SQL in `sql/transform/` for data shaping logic; use bash only when SQL is insufficient (e.g., file downloads, unpacking, renaming).
 6. Log ETL runs to `logs/` with timestamps.
 7. On ETL errors (failed downloads, SQL execution failures), log the error to `logs/` with a timestamp and exit with a non-zero status. Do not silently continue past a failed step.

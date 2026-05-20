@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-Expands cycle-scoped raw archive files into the staging layer.
+Expands cycle-scoped bronze archive files into the silver layer.
 
 .DESCRIPTION
 Wrapper script that imports the shared ETL module and runs archive expansion
-from data/{cycle}/raw to data/{cycle}/staging.
+from data/{cycle}/bronze to data/{cycle}/silver.
 #>
 
 [CmdletBinding()]
@@ -12,9 +12,9 @@ param(
     [Parameter(Mandatory = $true)]
     [int]$Cycle,
 
-    [string]$SourceZone = "raw",
+    [string]$SourceZone = "bronze",
 
-    [string]$TargetZone = "staging",
+    [string]$TargetZone = "silver",
 
     [string]$SevenZipPath = "C:\Program Files\7-Zip\7z.exe"
 )

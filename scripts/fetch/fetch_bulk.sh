@@ -18,6 +18,24 @@
 
 set -euo pipefail
 
+get_remote_signature() {
+    local url="$1"
+    local headers
+
+    # Follow redirects and collect the final response headers.
+    headers="$(curl -fsSLI "$url" | tr -d '\r')"
+
+    local etag
+    local last_modified
+    local content_length
+
+    etag="$(printf '%s\n' "$headers" | awk -F': ' 'tolower($1)=="etag" {print $2}' | tail -n1)"
+    last_modified="$(printf '%s\n' "$headers" | awk -F': ' 'tolower($1)=="last-modified" {print $2}' | tail -n1)"
+    content_length="$(printf '%s\n' "$headers" | awk -F': ' 'tolower($1)=="content-length" {print $2}' | tail -n1)"
+
+    printf '%s|%s|%s\n' "$etag" "$last_modified" "$content_length"
+}
+
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <cycle>"
     echo "  e.g. $0 2026"
@@ -47,14 +65,31 @@ echo ""
 
 for NAME in "${FILES[@]}"; do
     ZIP="${DEST}/${NAME}.zip"
-    if [[ -f "${ZIP}" ]]; then
-        echo "[SKIP]  ${NAME}.zip already exists"
-    else
-        echo "[GET]   ${NAME}.zip"
-        curl -L --progress-bar -o "${ZIP}" "${BASE_URL}/${NAME}.zip"
+    URL="${BASE_URL}/${NAME}.zip"
+    META="${DEST}/.${NAME}.meta"
+
+    REMOTE_SIG="$(get_remote_signature "${URL}")"
+    PREV_SIG=""
+
+    if [[ -f "${META}" ]]; then
+        PREV_SIG="$(<"${META}")"
     fi
+
+    if [[ -f "${ZIP}" && -n "${PREV_SIG}" && "${REMOTE_SIG}" == "${PREV_SIG}" ]]; then
+        echo "[SKIP]  ${NAME}.zip unchanged on server"
+        echo "[SKIP]  ${NAME} extract unchanged"
+        echo ""
+        continue
+    fi
+
+    echo "[GET]   ${NAME}.zip"
+    curl -fL --progress-bar -o "${ZIP}" "${URL}"
+
     echo "[UNZIP] ${NAME}.zip"
     unzip -o -q -d "${DEST}" "${ZIP}"
+
+    printf '%s\n' "${REMOTE_SIG}" > "${META}"
+
     echo "[OK]    ${NAME} done"
     echo ""
 

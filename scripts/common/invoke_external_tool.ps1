@@ -153,9 +153,11 @@ function Invoke-ExternalTool {
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
     [void]$process.Start()
-    $stdOut = $process.StandardOutput.ReadToEnd()
-    $stdErr = $process.StandardError.ReadToEnd()
+    $stdOutTask = $process.StandardOutput.ReadToEndAsync()
+    $stdErrTask = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
+    $stdOut = $stdOutTask.GetAwaiter().GetResult()
+    $stdErr = $stdErrTask.GetAwaiter().GetResult()
     $durationMs = [int]((Get-Date) - $startTime).TotalMilliseconds
     $exitCode = $process.ExitCode
 
@@ -167,8 +169,8 @@ function Invoke-ExternalTool {
     Write-StructuredLog -Session $Session -Level $logLevel -Message $logMessage -Tool $ToolName -Metadata @{
         exitCode   = $exitCode
         durationMs = $durationMs
-        stdout     = $stdOut.Trim()
-        stderr     = $stdErr.Trim()
+        stdout     = $stdOut
+        stderr     = $stdErr
     }
 
     if ($exitCode -ne 0 -and $ThrowOnError) {

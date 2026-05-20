@@ -16,7 +16,16 @@ function New-LogSession {
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $sanitizedOperationName = ($OperationName -replace '[^\w\-]', '_')
-    $sessionId = '{0}-{1}-{2}' -f $sanitizedOperationName, $timestamp, ([Guid]::NewGuid().ToString('N'))
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $operationHash = [System.BitConverter]::ToString(
+            $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($OperationName))
+        ).Replace('-', '').Substring(0, 8).ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+    }
+    $sessionId = '{0}-{1}-{2}-{3}' -f $sanitizedOperationName, $operationHash, $timestamp, ([Guid]::NewGuid().ToString('N'))
     $logFile = Join-Path $logsDir "$sessionId.jsonl"
 
     New-Item -ItemType File -Path $logFile -Force | Out-Null

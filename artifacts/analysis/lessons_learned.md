@@ -20,3 +20,9 @@
 - Stored `row_count` as `NULL` intentionally for this phase; these tables currently track cycle availability and source artifact paths.
 - `glob(...)` + regex against normalized file paths is stable; simplified regex patterns were required for consistent cycle extraction in DuckDB.
 - Verified successful baseline insertion for cycles 2020 and 2024 across all four families.
+
+## Indiv Table Slice
+
+- `indiv` is large enough that a raw-zip baseline is the safest first implementation step.
+- Implemented cycle/source tracking with `row_count = NULL` and `load_mode = raw-zip-baseline` to keep progress explicit while avoiding heavyweight full scans.
+- Verified snapshot entries for cycles 2020 and 2024 from raw zip presence; this sets up a clean handoff to a future incremental counting phase.

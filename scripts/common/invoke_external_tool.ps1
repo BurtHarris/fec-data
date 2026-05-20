@@ -81,7 +81,7 @@ function ConvertTo-ProcessArguments {
 
     return ($Arguments | ForEach-Object {
             if ($_ -match '[\s"]') {
-                '"' + ($_ -replace '"', '\"') + '"'
+                '"' + ($_ -replace '"', '""') + '"'
             }
             else {
                 $_

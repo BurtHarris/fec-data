@@ -47,7 +47,6 @@ if (-Not (Test-Path -Path $stagingDir)) {
 }
 
 # Extract all ZIP files in the directory at once using 7-Zip with multi-threading
-$7zipPath = "C:\Program Files\7-Zip\7z.exe"  # Adjust path if 7-Zip is installed elsewhere
 if (-Not (Test-Path -Path $7zipPath)) {
     Write-StructuredLog -Session $session -Level 'ERROR' -Message "7-Zip executable not found at $7zipPath. Please ensure 7-Zip is installed." -Tool '7zip'
     exit 1

@@ -1,19 +1,25 @@
 <#
 .SYNOPSIS
-Downloads and refreshes cycle-scoped raw archives used by ETL.
+Updates cycle-scoped raw archives for the ETL pipeline.
 
 .DESCRIPTION
-Lightweight wrapper that imports the shared ETL module and invokes
-the cycle raw sync command.
+Imports the local ETL module and runs cycle-based raw archive sync.
+Directory layout remains year-first: data/{cycle}/raw.
 
 .PARAMETER Cycle
-Election cycle year (for example: 2024).
+The election cycle year (for example: 2024).
 
 .PARAMETER Files
-Archive file prefixes to fetch.
+Archive file prefixes to download (for example: weball, indiv).
 
 .PARAMETER Force
-Bypass conditional cache checks.
+Forces download without conditional cache checks.
+
+.PARAMETER Sequential
+Reserved for future parallelization control; current implementation runs in order for easier debugging.
+
+.EXAMPLE
+.\scripts\Update-RawFile.ps1 -Cycle 2024
 #>
 
 [CmdletBinding()]
@@ -35,7 +41,7 @@ param(
     [switch]$Sequential
 )
 
-$modulePath = Join-Path -Path $PSScriptRoot -ChildPath "../modules/ETLModule.psd1"
+$modulePath = Join-Path -Path $PSScriptRoot -ChildPath "modules/ETLModule.psd1"
 Import-Module -Force $modulePath
 
 Invoke-FecCycleRawSync -Cycle $Cycle -FilePrefixes $Files -Force:$Force -Sequential:$Sequential

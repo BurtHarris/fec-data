@@ -8,7 +8,7 @@ SELECT
     min(filename) AS source_path,
     now() AS loaded_at
 FROM read_csv_auto(
-    'data/*/silver/ccl.txt',
+    'data/*/silver/**/[cC][cC][lL]*.[tT][xX][tT]',
     delim='|',
     header=false,
     all_varchar=true,
@@ -24,3 +24,5 @@ INSERT INTO fec_ccl_snapshot (cycle, row_count, source_path, loaded_at)
 SELECT cycle, row_count, source_path, loaded_at
 FROM _ccl_counts
 WHERE cycle IS NOT NULL;
+
+

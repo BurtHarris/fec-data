@@ -23,7 +23,7 @@ param (
 $7zipPath = "C:\Program Files\7-Zip\7z.exe"  # Adjust path if 7-Zip is installed elsewhere
 
 # Derive the directory path from the cycle
-$Directory = Join-Path -Path "data/raw" -ChildPath $Cycle
+$Directory = Join-Path -Path "data" -ChildPath (Join-Path $Cycle "raw")
 
 # Ensure the directory exists
 if (-Not (Test-Path -Path $Directory -PathType Container)) {
@@ -32,7 +32,7 @@ if (-Not (Test-Path -Path $Directory -PathType Container)) {
 }
 
 # Derive the staging directory path
-$stagingDir = Join-Path -Path "data/staging" -ChildPath $Cycle
+$stagingDir = Join-Path -Path "data" -ChildPath (Join-Path $Cycle "staging")
 
 # Ensure the staging directory exists
 if (-Not (Test-Path -Path $stagingDir)) {

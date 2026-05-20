@@ -2,7 +2,7 @@
 # =============================================================================
 # fec_bulk_download.sh
 #
-# Downloads FEC bulk data files for a given election cycle.
+# Downloads and extracts FEC bulk data files for a given election cycle.
 #
 # Usage:
 #   ./fec_bulk_download.sh <cycle>
@@ -11,9 +11,9 @@
 #
 # Examples:
 #   ./fec_bulk_download.sh 2026
-#     → stores files in data/raw/2026/
+#     → stores files in data/2026/raw/
 #
-# Requires: curl, unzip
+# Requires: curl
 # =============================================================================
 
 set -euo pipefail
@@ -45,11 +45,10 @@ fi
 CYCLE="$1"
 YY="${CYCLE:2}"
 BASE_URL="https://www.fec.gov/files/bulk-downloads/${CYCLE}"
-DEST="data/raw/${CYCLE}"
+RAW_DEST="data/${CYCLE}/raw"
+BY_DATE_DEST="${RAW_DEST}/by_date"
 
-mkdir -p "${DEST}"
-BY_DATE_DEST="${DEST}/by_date"
-mkdir -p "${BY_DATE_DEST}"
+mkdir -p "${RAW_DEST}"
 
 FILES=(
     "weball${YY}"   # Candidate summary totals
@@ -61,14 +60,14 @@ FILES=(
     "cn${YY}"       # Candidate master
 )
 
-echo "Downloading FEC bulk data — cycle ${CYCLE}"
-echo "Destination: ${DEST}"
+echo "Downloading and extracting FEC bulk data — cycle ${CYCLE}"
+echo "Destination: ${RAW_DEST}"
 echo ""
 
 for NAME in "${FILES[@]}"; do
-    ZIP="${DEST}/${NAME}.zip"
+    ZIP="${RAW_DEST}/${NAME}.zip"
     URL="${BASE_URL}/${NAME}.zip"
-    META="${DEST}/.${NAME}.meta"
+    META="${RAW_DEST}/.${NAME}.meta"
 
     REMOTE_SIG="$(get_remote_signature "${URL}")"
     PREV_SIG=""
@@ -88,10 +87,12 @@ for NAME in "${FILES[@]}"; do
     curl -fL --progress-bar -o "${ZIP}" "${URL}"
     printf '%s\n' "${REMOTE_SIG}" > "${META}"
     echo "[OK]    ${NAME} downloaded"
+
+    echo "[EXTRACT] ${NAME}.zip"
+    7z x -y -o"${RAW_DEST}" "${ZIP}"
+    echo "[OK]    ${NAME} extracted"
     echo ""
 
-    # Optional: Remove ZIP file after extraction
-    # rm -f "${ZIP}"
 done
 
 # Add support for incremental updates in by_date subfolder
@@ -118,6 +119,3 @@ done
 # Log the downloaded files
 echo "All incremental files ready in ${BY_DATE_DEST}/"
 ls -lh "${BY_DATE_DEST}/"
-
-echo "All files ready in ${DEST}/"
-ls -lh "${DEST}/"

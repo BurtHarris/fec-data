@@ -3,7 +3,7 @@
 
 CREATE OR REPLACE TEMP TABLE _cm_counts AS
 SELECT
-    CAST(NULLIF(regexp_extract(replace(filename, chr(92), '/'), '(^|/)data/([0-9]{4})/staging/cm\\.txt$', 2), '') AS INTEGER) AS cycle,
+    CAST(NULLIF(regexp_extract(replace(filename, chr(92), '/'), '(^|/)data/([0-9]{4})/staging/cm\.txt$', 2), '') AS INTEGER) AS cycle,
     count(*) AS row_count,
     min(filename) AS source_path,
     now() AS loaded_at

@@ -21,6 +21,9 @@ Invoke-EtlCycleLoad -Cycle 2024 -DuckDbPath db/fec.duckdb
 # Optional medallion zone parameters
 Invoke-FecCycleRawSync -Cycle 2024 -LandingZone bronze
 Expand-EtlCycleArchives -Cycle 2024 -SourceZone bronze -TargetZone silver
+
+# Incremental mode expands all paths, including indiv/by_date
+Expand-EtlCycleArchives -Cycle 2024 -Incremental
 ```
 
 ## Script wrappers
@@ -31,6 +34,8 @@ Expand-EtlCycleArchives -Cycle 2024 -SourceZone bronze -TargetZone silver
 - `scripts/run_etl_cycle.ps1`: one command to run retrieve/transform/load for a cycle.
 
 Default zone parameters use medallion naming: `bronze` (download) -> `silver` (extract) -> `gold` (load).
+
+Extraction note: by default (non-incremental mode), `Expand-EtlCycleArchives` skips `indiv` `by_date` entries to speed up baseline and test runs. Use `-Incremental` to include `by_date`.
 
 ## `.psm1` vs `.psd1`
 

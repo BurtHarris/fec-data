@@ -115,6 +115,8 @@ function Expand-EtlCycleArchives {
 
         [string]$DataRoot = "data",
 
+        [switch]$Incremental,
+
         [string]$SevenZipPath = "C:\Program Files\7-Zip\7z.exe"
     )
 
@@ -140,6 +142,13 @@ function Expand-EtlCycleArchives {
     foreach ($zipFile in $zipFiles) {
         Write-Host "Extracting $($zipFile.Name) -> $targetDir"
         $arguments = @("x", $zipFile.FullName, "-o$targetDir", "-y", "-mmt")
+
+        # In non-incremental mode, skip heavy indiv by_date expansion to speed up test runs.
+        if (-not $Incremental -and $zipFile.Name -match '^indiv[0-9]{2}\.zip$') {
+            Write-Host "Skipping indiv by_date folder for non-incremental mode: $($zipFile.Name)"
+            $arguments += @("-x!by_date/*", "-x!by_date\\*")
+        }
+
         $process = Start-Process -FilePath $SevenZipPath -ArgumentList $arguments -NoNewWindow -PassThru -Wait
         if ($process.ExitCode -ne 0) {
             throw "Failed to extract $($zipFile.FullName)"

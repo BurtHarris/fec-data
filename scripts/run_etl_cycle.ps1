@@ -4,6 +4,9 @@ Runs retrieve, transform, and load steps for a cycle-scoped ETL flow.
 
 .DESCRIPTION
 Defaults to running all steps. Use switches to run targeted phases.
+
+Transform defaults to non-incremental extraction, which skips indiv/by_date
+for faster test cycles. Use -Incremental to include it.
 #>
 
 [CmdletBinding()]
@@ -28,6 +31,8 @@ param(
 
     [switch]$Force,
 
+    [switch]$Incremental,
+
     [string]$LandingZone = "bronze",
 
     [string]$SourceZone = "bronze",
@@ -49,7 +54,7 @@ if ($runAll -or $Retrieve) {
 
 if ($runAll -or $Transform) {
     Write-Host "[ETL] Transform step"
-    & "$PSScriptRoot/transform/extract_zips.ps1" -Cycle $Cycle -SourceZone $SourceZone -TargetZone $TargetZone
+    & "$PSScriptRoot/transform/extract_zips.ps1" -Cycle $Cycle -SourceZone $SourceZone -TargetZone $TargetZone -Incremental:$Incremental
     if ($LASTEXITCODE -ne 0) {
         throw "Transform step failed."
     }

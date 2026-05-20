@@ -41,3 +41,11 @@ properties:
       settings:
         id: jqlang.jq
         source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: SevenZip
+      directives:
+        description: Install 7-Zip for file extraction
+      settings:
+        id: 7zip.7zip
+        source: winget

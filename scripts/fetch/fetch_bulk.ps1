@@ -3,6 +3,8 @@ param(
     [string[]]$Arguments
 )
 
+. (Join-Path $PSScriptRoot '..\common\invoke_external_tool.ps1')
+
 $programFilesX86 = [System.Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
 
 $gitBashCandidates = @(
@@ -21,12 +23,28 @@ if (-not $gitBash) {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $scriptPath = './scripts/fetch/fetch_bulk.sh'
+$session = New-LogSession -OperationName 'fetch_bulk'
 
 Push-Location $repoRoot
 
 try {
-    & $gitBash $scriptPath @Arguments
-    exit $LASTEXITCODE
+    Write-StructuredLog -Session $session -Level 'INFO' -Message 'Starting fetch bulk wrapper execution' -Tool 'bash' -Metadata @{
+        arguments = $Arguments
+        logFile   = $session.LogFile
+    }
+
+    $result = Invoke-ExternalTool -ToolPath $gitBash -Arguments @($scriptPath) + $Arguments -Session $session -ToolName 'bash' -Activity 'Running fetch_bulk.sh' -ThrowOnError:$false
+    if ($result.ExitCode -ne 0) {
+        Write-StructuredLog -Session $session -Level 'ERROR' -Message "fetch_bulk.sh exited with code $($result.ExitCode)" -Tool 'bash'
+        exit $result.ExitCode
+    }
+
+    Write-StructuredLog -Session $session -Level 'INFO' -Message 'fetch_bulk wrapper completed successfully' -Tool 'bash'
+    exit 0
+}
+catch {
+    Write-StructuredLog -Session $session -Level 'ERROR' -Message "Unexpected failure running fetch_bulk wrapper: $_" -Tool 'bash'
+    exit 1
 }
 finally {
     Pop-Location

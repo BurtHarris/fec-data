@@ -20,14 +20,21 @@ param (
     [int]$Cycle
 )
 
+. (Join-Path $PSScriptRoot '..\common\invoke_external_tool.ps1')
+
 $7zipPath = "C:\Program Files\7-Zip\7z.exe"  # Adjust path if 7-Zip is installed elsewhere
+$session = New-LogSession -OperationName "extract_zips_$Cycle"
+Write-StructuredLog -Session $session -Level 'INFO' -Message "Starting ZIP extraction for cycle $Cycle" -Tool '7zip' -Metadata @{
+    cycle   = $Cycle
+    logFile = $session.LogFile
+}
 
 # Derive the directory path from the cycle
 $Directory = Join-Path -Path "data" -ChildPath (Join-Path $Cycle "raw")
 
 # Ensure the directory exists
 if (-Not (Test-Path -Path $Directory -PathType Container)) {
-    Write-Error "Error: Directory $Directory does not exist."
+    Write-StructuredLog -Session $session -Level 'ERROR' -Message "Directory does not exist: $Directory"
     exit 1
 }
 
@@ -42,34 +49,35 @@ if (-Not (Test-Path -Path $stagingDir)) {
 # Extract all ZIP files in the directory at once using 7-Zip with multi-threading
 $7zipPath = "C:\Program Files\7-Zip\7z.exe"  # Adjust path if 7-Zip is installed elsewhere
 if (-Not (Test-Path -Path $7zipPath)) {
-    Write-Error "7-Zip executable not found at $7zipPath. Please ensure 7-Zip is installed."
+    Write-StructuredLog -Session $session -Level 'ERROR' -Message "7-Zip executable not found at $7zipPath. Please ensure 7-Zip is installed." -Tool '7zip'
     exit 1
 }
 
 # Use wildcard to process all ZIP files in the directory
 $zipFiles = Join-Path -Path $Directory -ChildPath "*.zip"
 
-$arguments = "x `"$zipFiles`" -o`"$stagingDir`" -y -mmt"
+$arguments = @('x', $zipFiles, "-o$stagingDir", '-y', '-mmt')
 try {
-    Write-Host "[UNZIP] Extracting all ZIP files in $Directory using multi-threading"
-    Start-Process -FilePath $7zipPath -ArgumentList $arguments -NoNewWindow -Wait -ErrorAction Stop
-} catch {
-    Write-Error "Failed to extract ZIP files: $_"
+    Write-StructuredLog -Session $session -Level 'INFO' -Message "Extracting all ZIP files in $Directory using multi-threading" -Tool '7zip'
+    [void](Invoke-7Zip -SevenZipPath $7zipPath -Arguments $arguments -Session $session)
+}
+catch {
+    Write-StructuredLog -Session $session -Level 'ERROR' -Message "Failed to extract ZIP files: $_" -Tool '7zip'
     exit 1
 }
 
 # Cross-check .meta files against ZIP files
-Write-Host "[CHECK] Verifying .meta files against ZIP files"
+Write-StructuredLog -Session $session -Level 'INFO' -Message 'Verifying .meta files against ZIP files'
 Get-ChildItem -Path $Directory -Filter "*.meta" | ForEach-Object {
     $metaFile = $_
     $zipFile = $metaFile.FullName -replace '^.*\\\\([^.]+)\\\.meta$', "$Directory/$1.zip"
-    Write-Host "Meta File: $($metaFile.FullName)"
-    Write-Host "Expected ZIP File: $zipFile"
+    Write-StructuredLog -Session $session -Level 'INFO' -Message "Meta file: $($metaFile.FullName)"
+    Write-StructuredLog -Session $session -Level 'INFO' -Message "Expected ZIP file: $zipFile"
     if (Test-Path $zipFile) {
-        Write-Host "ZIP File Found: $zipFile"
+        Write-StructuredLog -Session $session -Level 'INFO' -Message "ZIP file found: $zipFile"
     } else {
-        Write-Host "ZIP File Missing: $zipFile"
+        Write-StructuredLog -Session $session -Level 'WARN' -Message "ZIP file missing: $zipFile"
     }
 }
 
-Write-Host "All ZIP files for cycle $Cycle have been processed and extracted files moved to the staging directory."
+Write-StructuredLog -Session $session -Level 'INFO' -Message "All ZIP files for cycle $Cycle have been processed and extracted files moved to the staging directory."

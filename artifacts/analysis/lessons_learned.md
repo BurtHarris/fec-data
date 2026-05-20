@@ -35,3 +35,14 @@ For background, see [Databricks' medallion architecture documentation](https://w
 - `indiv` is large enough that a bronze-zip baseline is the safest first implementation step.
 - Implemented cycle/source tracking with `row_count = NULL` and `load_mode = raw-zip-baseline` to keep progress explicit while avoiding heavyweight full scans.
 - Verified snapshot entries for cycles 2020 and 2024 from raw zip presence; this sets up a clean handoff to a future incremental counting phase.
+
+## Terminology Standardization (Commit: 10a53ff)
+
+- Adopted medallion architecture terminology consistently across the codebase:
+  - **raw** → **bronze** (landing zone for downloaded files)
+  - **staging** → **silver** (zone for extracted/unpacked files)
+  - **processed** → **gold** (zone for curated/refined tables)
+- Updated all 21 files: PowerShell modules, wrapper scripts, SQL transforms, documentation, and artifacts.
+- Added reference to [Databricks medallion architecture guide](https://www.databricks.com/blog/2022/06/24/use-the-medallion-multi-hop-architecture-to-build-data-lakehouses-in-databricks.html) in project documentation.
+- All parameter defaults and path patterns now use bronze/silver/gold naming for consistency.
+- This terminology aligns with industry standards and improves clarity for future collaborators.

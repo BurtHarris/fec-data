@@ -55,6 +55,7 @@ if (-Not (Test-Path -Path $7zipPath)) {
 # Use wildcard to process all ZIP files in the directory
 $zipFiles = Join-Path -Path $Directory -ChildPath "*.zip"
 
+# 7-Zip requires the output directory flag and path in one argument ("-o<path>").
 $arguments = @('x', $zipFiles, "-o$stagingDir", '-y', '-mmt')
 try {
     Write-StructuredLog -Session $session -Level 'INFO' -Message "Extracting all ZIP files in $Directory using multi-threading" -Tool '7zip'
@@ -69,7 +70,8 @@ catch {
 Write-StructuredLog -Session $session -Level 'INFO' -Message 'Verifying .meta files against ZIP files'
 Get-ChildItem -Path $Directory -Filter "*.meta" | ForEach-Object {
     $metaFile = $_
-    $zipFile = $metaFile.FullName -replace '^.*\\([^.]+)\.meta$', "$Directory/$1.zip"
+    $zipFileName = ([System.IO.Path]::GetFileNameWithoutExtension($metaFile.Name)) + '.zip'
+    $zipFile = Join-Path -Path $Directory -ChildPath $zipFileName
     Write-StructuredLog -Session $session -Level 'INFO' -Message "Meta file: $($metaFile.FullName)"
     Write-StructuredLog -Session $session -Level 'INFO' -Message "Expected ZIP file: $zipFile"
     if (Test-Path $zipFile) {

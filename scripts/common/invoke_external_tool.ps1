@@ -79,6 +79,8 @@ function ConvertTo-ProcessArguments {
         [string[]]$Arguments
     )
 
+    # Fallback for hosts that do not expose ProcessStartInfo.ArgumentList (for example, Windows PowerShell on .NET Framework).
+    # This is intentionally minimal and only used in that compatibility path.
     return ($Arguments | ForEach-Object {
             if ($_ -match '[\s"]') {
                 '"' + ($_ -replace '"', '""') + '"'
@@ -133,6 +135,7 @@ function Invoke-ExternalTool {
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $resolvedToolPath
+    # ArgumentList is available on newer runtimes and avoids manual escaping; use it when present.
     if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
         foreach ($argument in $Arguments) {
             [void]$startInfo.ArgumentList.Add($argument)

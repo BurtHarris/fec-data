@@ -170,7 +170,8 @@ function Invoke-DuckDbSqlBatch {
 
     foreach ($sqlFile in $sqlFiles) {
         Write-Host "Running $StepName file: $($sqlFile.Name)"
-        & duckdb $DuckDbPath -c ".read $($sqlFile.FullName)"
+        $sqlPath = $sqlFile.FullName.Replace('\\', '/')
+        & duckdb $DuckDbPath -c ".read '$sqlPath'"
         if ($LASTEXITCODE -ne 0) {
             throw "DuckDB failed while running $($sqlFile.FullName)"
         }

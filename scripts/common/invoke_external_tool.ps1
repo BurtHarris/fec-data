@@ -15,8 +15,8 @@ function New-LogSession {
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $safeOperationName = ($OperationName -replace '[^\w\-]', '_')
-    $sessionId = '{0}-{1}-{2}' -f $safeOperationName, $timestamp, ([Guid]::NewGuid().ToString('N'))
+    $sanitizedOperationName = ($OperationName -replace '[^\w\-]', '_')
+    $sessionId = '{0}-{1}-{2}' -f $sanitizedOperationName, $timestamp, ([Guid]::NewGuid().ToString('N'))
     $logFile = Join-Path $logsDir "$sessionId.jsonl"
 
     New-Item -ItemType File -Path $logFile -Force | Out-Null

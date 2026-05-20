@@ -55,7 +55,8 @@ if (-Not (Test-Path -Path $7zipPath)) {
 # 7-Zip requires the output directory flag and path in one argument ("-o<path>").
 $zipFiles = Get-ChildItem -Path $Directory -Filter '*.zip' -File
 if ($zipFiles.Count -eq 0) {
-    Write-StructuredLog -Session $session -Level 'WARN' -Message "No ZIP files found in $Directory. Skipping extraction." -Tool '7zip'
+    Write-StructuredLog -Session $session -Level 'ERROR' -Message "No ZIP files found in $Directory." -Tool '7zip'
+    exit 1
 }
 else {
     $zipFilePaths = $zipFiles | ForEach-Object { $_.FullName }

@@ -1,6 +1,6 @@
-# FEC Campaign Finance ETL (DuckDB + curl + bash on Windows)
+# FEC Campaign Finance ETL (DuckDB + curl + PowerShell on Windows)
 
-This repository is set up for an ETL workflow that downloads Federal Election Commission (FEC) campaign finance data, stages it, and loads modeled tables into DuckDB.
+This repository is set up for an ETL workflow that downloads Federal Election Commission (FEC) campaign finance ZIP files, manages them locally, and loads modeled tables directly into DuckDB native storage.
 
 ## Key FEC Links
 
@@ -18,12 +18,18 @@ This repository is set up for an ETL workflow that downloads Federal Election Co
 - This repository currently uses bulk downloads only.
 - The FEC API is documented here for future use, but API ingestion is not currently part of this ETL setup.
 
+## Storage Approach (Current Scope)
+
+- Parquet is not required for this project.
+- Source ZIP files are downloaded and managed in `data/raw/`.
+- DuckDB reads source text/CSV data from extracted files and stores modeled results in the `.duckdb` database file.
+
 ## Stack
 
 - DuckDB for local analytics database and SQL transforms
 - curl for bulk data downloads
-- bash scripts for repeatable ETL jobs
-- Windows host (Git Bash or WSL recommended for bash scripts)
+- PowerShell scripts for repeatable ETL jobs
+- Windows host (PowerShell 7+ recommended)
 
 ## Project Structure
 
@@ -39,7 +45,7 @@ fec-data/
     fec.duckdb   # Main DuckDB database file (created at runtime)
   scripts/
     fetch/       # curl download scripts
-    transform/   # preprocessing scripts (bash + optional awk/sed)
+    transform/   # preprocessing scripts (PowerShell)
     load/        # duckdb load scripts and orchestration
   sql/
     schema/      # CREATE TABLE / DDL files
@@ -57,22 +63,14 @@ Install:
 
 1. DuckDB CLI
 2. curl
-3. A bash environment:
-   - Git Bash, or
-   - WSL (Ubuntu)
+3. PowerShell 7+
 
 Verify tools:
 
-```bash
+```powershell
 duckdb --version
 curl --version
-bash --version
-```
-
-If PowerShell resolves `bash` to WSL on your machine, use the bundled PowerShell wrapper to force Git Bash for fetch jobs:
-
-```powershell
-.\scripts\fetch\fetch_bulk.ps1 2020
+$PSVersionTable.PSVersion
 ```
 
 ### Optional: Provision or Update Tools with winget configure
@@ -90,8 +88,6 @@ This script is **run manually by choice** — it is never called automatically b
 The configuration installs:
 
 - DuckDB CLI (`DuckDB.cli`)
-- Git for Windows / Git Bash (`Git.Git`)
-- WSL (`Microsoft.WSL`) as an optional bash environment
 - curl (`cURL.cURL`)
 - jq (`jqlang.jq`)
 
@@ -99,7 +95,7 @@ The configuration installs:
 
 1. Create the DuckDB file:
 
-```bash
+```powershell
 duckdb db/fec.duckdb ".databases"
 ```
 
@@ -107,7 +103,7 @@ duckdb db/fec.duckdb ".databases"
 
 3. Add a fetch script in `scripts/fetch/` (example command pattern):
 
-```bash
+```powershell
 curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
 ```
 
@@ -119,7 +115,7 @@ For the existing FEC bulk downloader on Windows PowerShell:
 
 4. Load and transform with DuckDB:
 
-```bash
+```powershell
 duckdb db/fec.duckdb -c ".read sql/schema/001_base_tables.sql"
 duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.sql"
 ```
@@ -127,7 +123,9 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 ## Recommended Conventions
 
 - Keep raw source files immutable in `data/raw/`.
+- Manage and track downloaded ZIP files in `data/raw/`.
 - Write all transformations as SQL in `sql/transform/` when possible.
+- Use PowerShell for all project scripting and orchestration.
 - Name SQL files with numeric prefixes for deterministic order:
   - `001_...sql`, `010_...sql`, `020_...sql`
 - Keep scripts idempotent so reruns are safe.
@@ -137,4 +135,4 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 
 - Add the first source-specific downloader in `scripts/fetch/`.
 - Define base tables in `sql/schema/`.
-- Add one end-to-end run script that calls fetch, then load, then QA checks.
+- Add one end-to-end PowerShell run script that calls fetch, then load, then QA checks.

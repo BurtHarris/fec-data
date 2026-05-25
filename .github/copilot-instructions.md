@@ -1,20 +1,26 @@
 # Copilot Instructions — FEC Campaign Finance ETL
 
-<!-- Analyzer note: This is a pure ETL project. There is no build system, no package manager (npm/pip/maven/gradle), no test runner, and no lint pipeline. The only task runners are bash scripts and DuckDB CLI invoked directly. Do not apply heuristics for software build/test/lint toolchains. -->
+<!-- Analyzer note: This is a pure ETL project. There is no build system, no package manager (npm/pip/maven/gradle), no test runner, and no lint pipeline. The only task runners are PowerShell scripts and DuckDB CLI invoked directly. Do not apply heuristics for software build/test/lint toolchains. -->
 
 ## Project Summary
 
-This is a batch ETL project that downloads Federal Election Commission (FEC) bulk data files and loads them into a local DuckDB database for analysis. The host OS is Windows. Bash scripts are run via Git Bash or WSL.
+This is a batch ETL project that downloads Federal Election Commission (FEC) bulk ZIP files, manages them locally, and loads them into a local DuckDB database for analysis. The host OS is Windows. All scripting is done in PowerShell.
 
 ## Stack
 
 - DuckDB CLI — local analytics database and SQL transforms
 - curl — bulk file downloads
 - 7-Zip CLI — unpacking downloaded zip files
-- bash — ETL orchestration scripts
+- PowerShell — ETL orchestration scripts
 - jq — JSON parsing in shell pipelines
-- Windows (Git Bash or WSL for bash; PowerShell for git/admin tasks)
+- Windows (PowerShell for ETL and admin tasks)
 - winget — tool provisioning (`.config/configuration.winget`)
+
+## Storage Strategy
+
+- Parquet is not required for this project.
+- ZIP files are downloaded to `data/raw/` and managed as immutable source artifacts.
+- DuckDB imports source records from extracted files and persists modeled data in native DuckDB storage (`.duckdb`).
 
 ## Key FEC Data Sources
 
@@ -32,7 +38,7 @@ data/staging/              # Unpacked/normalized files — git-ignored
 data/processed/            # Curated extracts — git-ignored
 db/                        # DuckDB .duckdb files — git-ignored
 scripts/fetch/             # curl download scripts
-scripts/transform/         # bash preprocessing (awk/sed/jq)
+scripts/transform/         # PowerShell preprocessing
 scripts/load/              # DuckDB load/orchestration scripts
 sql/schema/                # DDL: CREATE TABLE statements
 sql/transform/             # INSERT-SELECT / merge / cleanup SQL
@@ -53,22 +59,22 @@ Run the provisioning script from the project root:
 .\scripts\setup-tools.ps1
 ```
 
-This calls `winget configure` against `.config/configuration.winget` and installs DuckDB CLI, Git/Git Bash, WSL, curl, and jq.
+This calls `winget configure` against `.config/configuration.winget` and installs DuckDB CLI, Git, curl, and jq.
 
 ## Common Commands
 
 Create the DuckDB database:
-```bash
+```powershell
 duckdb db/fec.duckdb ".databases"
 ```
 
 Download a bulk file:
-```bash
+```powershell
 curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
 ```
 
 Apply schema or transform SQL:
-```bash
+```powershell
 duckdb db/fec.duckdb -c ".read sql/schema/001_base_tables.sql"
 duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.sql"
 ```
@@ -79,7 +85,7 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 2. SQL files use numeric prefixes for deterministic execution order: `001_`, `010_`, `020_`, etc.
 3. All scripts must be idempotent (safe to rerun).
 4. Raw source files in `data/raw/` are immutable — transformations happen downstream.
-5. Use SQL in `sql/transform/` for data shaping logic; use bash only when SQL is insufficient (e.g., file downloads, unpacking, renaming).
+5. Use SQL in `sql/transform/` for data shaping logic; use PowerShell when SQL is insufficient (e.g., file downloads, unpacking, renaming).
 6. Log ETL runs to `logs/` with timestamps.
 7. On ETL errors (failed downloads, SQL execution failures), log the error to `logs/` with a timestamp and exit with a non-zero status. Do not silently continue past a failed step.
 

@@ -3,9 +3,9 @@
 Loads FEC bulk ZIP files for a cycle into DuckDB raw tables.
 
 .DESCRIPTION
-This script reads ZIP artifacts from data/<cycle>, extracts the first .txt/.csv
-entry per ZIP to a temp location, and loads it into DuckDB as a cycle-scoped
-raw table (raw_fec.<table>_<cycle>) using read_csv_auto.
+This script reads ZIP artifacts from data/<cycle> and loads mapped ZIP entries
+into DuckDB as cycle-scoped raw tables (raw_fec.<table>_<cycle>) using
+zipfs archive paths.
 
 .PARAMETER Cycle
 Election cycle year (for example, 2026).
@@ -18,9 +18,6 @@ Defaults to cm, cn, indiv, oppexp, oth, pas2, weball.
 
 .PARAMETER DbPath
 Path to the DuckDB database file.
-
-.PARAMETER KeepExtracted
-If set, keeps extracted temp source files under tmp/load/<cycle>.
 
 .EXAMPLE
 .\scripts\load-fec-duckdb.ps1 -Cycle 2026
@@ -36,8 +33,7 @@ param(
     [string]$Cycle,
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$Tables,
-    [string]$DbPath = 'db/fec.duckdb',
-    [switch]$KeepExtracted
+    [string]$DbPath = 'db/fec.duckdb'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +48,17 @@ $defaultTables = @(
     'pas2',
     'weball'
 )
+
+$tableEntryMap = @{
+    ccl = 'ccl.txt'
+    cm = 'cm.txt'
+    cn = 'cn.txt'
+    indiv = 'itcont.txt'
+    oth = 'itoth.txt'
+    pas2 = 'itpas2.txt'
+    oppexp = 'oppexp.txt'
+    weball = 'weball.txt'
+}
 
 if (-not $Tables -or $Tables.Count -eq 0) {
     $Tables = $defaultTables
@@ -75,7 +82,6 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $cycleDir = Join-Path $repoRoot "data\$Cycle"
 $yy = $Cycle.Substring(2)
 $dbPathResolved = if ([System.IO.Path]::IsPathRooted($DbPath)) { $DbPath } else { Join-Path $repoRoot $DbPath }
-$tempRoot = Join-Path $repoRoot "tmp\load\$Cycle"
 $schemaSqlPath = Join-Path $repoRoot 'sql\schema\001_create_fec_schemas.sql'
 
 if (-not (Test-Path -Path $cycleDir -PathType Container)) {
@@ -89,13 +95,20 @@ if (-not (Test-Path -Path $schemaSqlPath -PathType Leaf)) {
 }
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $dbPathResolved) -Force | Out-Null
-New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 
 # Initialize required schemas/tables.
-$initCommand = ".read '$($schemaSqlPath.Replace('\\', '/'))'"
+$initCommand = ".read '$($schemaSqlPath.Replace('\', '/'))'"
 duckdb $dbPathResolved -c $initCommand
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'Failed to initialize DuckDB schema objects.'
+    exit 1
+}
+
+# Ensure zipfs is available so DuckDB can read CSVs inside ZIP archives.
+$zipFsInstallSql = 'INSTALL zipfs FROM community;'
+duckdb $dbPathResolved -c $zipFsInstallSql
+if ($LASTEXITCODE -ne 0) {
+    Write-Error 'Failed to install DuckDB zipfs extension from community.'
     exit 1
 }
 
@@ -104,59 +117,13 @@ $skippedCount = 0
 $failedCount = 0
 $total = $Tables.Count
 $index = 0
-$zipPathPattern = $null
-$zipReadChecked = $false
-
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-function Test-DuckDbCsvPath {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$DbPath,
-        [Parameter(Mandatory = $true)]
-        [string]$CsvPath
-    )
-
-    $escapedCsvPath = $CsvPath.Replace("'", "''")
-    $probeSql = @"
-SELECT 1
-FROM read_csv_auto(
-    '$escapedCsvPath',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    ignore_errors=true,
-    sample_size=1000
-)
-LIMIT 1;
-"@
-
-    duckdb $DbPath -c $probeSql 2>$null | Out-Null
-    return ($LASTEXITCODE -eq 0)
-}
-
-function Build-ZipCsvPath {
-    param(
-        [Parameter(Mandatory = $true)]
-        [ValidateSet('zip_slash', 'bang', 'double_colon')]
-        [string]$Pattern,
-        [Parameter(Mandatory = $true)]
-        [string]$ZipPath,
-        [Parameter(Mandatory = $true)]
-        [string]$EntryPath
-    )
-
-    switch ($Pattern) {
-        'zip_slash' { return "zip://$ZipPath/$EntryPath" }
-        'bang' { return "$ZipPath!$EntryPath" }
-        'double_colon' { return "$ZipPath::$EntryPath" }
-    }
-}
 
 foreach ($table in $Tables) {
     $index++
     $zipName = "$table$yy.zip"
     $zipPath = Join-Path $cycleDir $zipName
+
+    Write-Host "[$index/$total] Processing $zipName..."
 
     Write-Progress -Id 1 -Activity "Loading FEC tables for cycle $Cycle" -Status "[$index/$total] $zipName" -PercentComplete ([int](($index * 100) / $total))
 
@@ -166,66 +133,25 @@ foreach ($table in $Tables) {
         continue
     }
 
-    $archive = $null
-    $entry = $null
-    $extractPath = $null
-
     try {
-        $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
-        $entry = $archive.Entries |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) -and ($_.Name -match '\.(txt|csv)$') } |
-            Select-Object -First 1
-
-        if (-not $entry) {
-            Write-Warning "No .txt/.csv entry found in ZIP, skipping: $zipPath"
-            $skippedCount++
-            continue
-        }
-
         $targetTable = "raw_fec.{0}_{1}" -f $table, $Cycle
-        $zipPathSql = $zipPath.Replace("'", "''").Replace('\\', '/')
-        $entryNameSql = $entry.Name.Replace("'", "''")
-
-        $zipPathNormalized = $zipPath.Replace('\\', '/')
-        $entryPathNormalized = $entry.FullName.Replace('\\', '/')
-        $sourcePath = $null
-
-        if (-not $zipReadChecked) {
-            foreach ($candidatePattern in @('zip_slash', 'bang', 'double_colon')) {
-                $candidatePath = Build-ZipCsvPath -Pattern $candidatePattern -ZipPath $zipPathNormalized -EntryPath $entryPathNormalized
-                if (Test-DuckDbCsvPath -DbPath $dbPathResolved -CsvPath $candidatePath) {
-                    $zipPathPattern = $candidatePattern
-                    Write-Verbose "Detected in-place ZIP read pattern: $zipPathPattern"
-                    break
-                }
-            }
-
-            if (-not $zipPathPattern) {
-                Write-Verbose 'In-place ZIP reads not available. Falling back to extract-then-load.'
-            }
-
-            $zipReadChecked = $true
+        $zipPathSql = $zipPath.Replace("'", "''").Replace('\', '/')
+        $entryName = $tableEntryMap[$table]
+        if (-not $entryName) {
+            throw "No ZIP entry mapping configured for table '$table'."
         }
+        $entryNameSql = $entryName.Replace("'", "''")
+        Write-Verbose "Mapped table '$table' to ZIP entry '$entryName'."
 
-        if ($zipPathPattern) {
-            $sourcePath = Build-ZipCsvPath -Pattern $zipPathPattern -ZipPath $zipPathNormalized -EntryPath $entryPathNormalized
-        }
-        else {
-            $extractFileName = "{0}_{1}_{2}" -f $table, $Cycle, $entry.Name
-            $extractPath = Join-Path $tempRoot $extractFileName
-
-            if (Test-Path $extractPath) {
-                Remove-Item -Path $extractPath -Force
-            }
-
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $extractPath)
-            $sourcePath = $extractPath.Replace('\\', '/')
-        }
+        $zipPathNormalized = $zipPath.Replace('\', '/')
+        $sourcePath = "zip://$zipPathNormalized/$entryName"
+        Write-Verbose "Using DuckDB ZIP source path: $sourcePath"
 
         $sourcePathSql = $sourcePath.Replace("'", "''")
 
         if ($table -eq 'ccl') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -282,6 +208,7 @@ SELECT
         }
         elseif ($table -eq 'cm') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -344,6 +271,7 @@ SELECT
         }
         elseif ($table -eq 'cn') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -411,6 +339,7 @@ SELECT
         }
         elseif ($table -eq 'indiv') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -485,6 +414,7 @@ SELECT
         }
         elseif ($table -eq 'oth') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -559,6 +489,7 @@ SELECT
         }
         elseif ($table -eq 'pas2') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -635,6 +566,7 @@ SELECT
         }
         elseif ($table -eq 'oppexp') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -717,6 +649,7 @@ SELECT
         }
         elseif ($table -eq 'weball') {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -812,6 +745,7 @@ SELECT
         }
         else {
             $loadSql = @"
+LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
@@ -844,24 +778,21 @@ SELECT
 
         duckdb $dbPathResolved -c $loadSql
         if ($LASTEXITCODE -ne 0) {
+            if ($table -eq 'indiv') {
+                throw "DuckDB load failed for $zipName. This archive may contain multiple files; use extraction or explicit-entry handling for indiv."
+            }
+
             throw "DuckDB load failed for $zipName"
         }
 
         $loadedCount++
+        Write-Host "[$index/$total] Loaded $zipName into $targetTable"
         Write-Verbose "LOADED  $zipName -> $targetTable"
     }
     catch {
         $failedCount++
         Write-Error "Failed loading ${zipName}: $_"
-    }
-    finally {
-        if ($archive) {
-            $archive.Dispose()
-        }
-
-        if ((-not $KeepExtracted) -and $extractPath -and (Test-Path $extractPath)) {
-            Remove-Item -Path $extractPath -Force
-        }
+        throw
     }
 }
 

@@ -142,6 +142,10 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 - Keep scripts idempotent so reruns are safe.
 - Log all pipeline runs to `logs/`.
 
+## Project Memory
+
+- Repository-specific lessons learned and implementation notes are tracked in `PROJECT_MEMORY.md`.
+
 ## Next Steps
 
 - Add the first source-specific downloader in `scripts/`.

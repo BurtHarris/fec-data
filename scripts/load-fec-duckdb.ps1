@@ -43,6 +43,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $defaultTables = @(
+    'ccl',
     'cm',
     'cn',
     'indiv',
@@ -223,7 +224,125 @@ foreach ($table in $Tables) {
 
         $sourcePathSql = $sourcePath.Replace("'", "''")
 
-        if ($table -eq 'cn') {
+        if ($table -eq 'ccl') {
+            $loadSql = @"
+DROP TABLE IF EXISTS $targetTable;
+CREATE TABLE $targetTable AS
+SELECT
+    CAND_ID,
+    TRY_CAST(
+        CASE
+            WHEN LENGTH(TRIM(CAND_ELECTION_YR)) = 4 THEN TRIM(CAND_ELECTION_YR)
+            ELSE NULL
+        END AS SMALLINT
+    ) AS CAND_ELECTION_YR,
+    TRY_CAST(
+        CASE
+            WHEN LENGTH(TRIM(FEC_ELECTION_YR)) = 4 THEN TRIM(FEC_ELECTION_YR)
+            ELSE NULL
+        END AS SMALLINT
+    ) AS FEC_ELECTION_YR,
+    CMTE_ID,
+    CMTE_TP,
+    CMTE_DSGN,
+    TRY_CAST(NULLIF(TRIM(LINKAGE_ID), '') AS BIGINT) AS LINKAGE_ID,
+    '$zipPathSql' AS _source_zip_path,
+    '$entryNameSql' AS _source_entry_name,
+    NOW() AS _loaded_at
+FROM read_csv(
+    '$sourcePathSql',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CAND_ID':'VARCHAR',
+        'CAND_ELECTION_YR':'VARCHAR',
+        'FEC_ELECTION_YR':'VARCHAR',
+        'CMTE_ID':'VARCHAR',
+        'CMTE_TP':'VARCHAR',
+        'CMTE_DSGN':'VARCHAR',
+        'LINKAGE_ID':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
+    $Cycle,
+    '$table',
+    '$zipPathSql',
+    '$entryNameSql',
+    '$targetTable',
+    (SELECT COUNT(*) FROM $targetTable),
+    NOW();
+"@
+        }
+        elseif ($table -eq 'cm') {
+            $loadSql = @"
+DROP TABLE IF EXISTS $targetTable;
+CREATE TABLE $targetTable AS
+SELECT
+    CMTE_ID,
+    CMTE_NM,
+    TRES_NM,
+    CMTE_ST1,
+    CMTE_ST2,
+    CMTE_CITY,
+    CMTE_ST,
+    CMTE_ZIP,
+    CMTE_DSGN,
+    CMTE_TP,
+    CMTE_PTY_AFFILIATION,
+    CMTE_FILING_FREQ,
+    ORG_TP,
+    CONNECTED_ORG_NM,
+    CAND_ID,
+    '$zipPathSql' AS _source_zip_path,
+    '$entryNameSql' AS _source_entry_name,
+    NOW() AS _loaded_at
+FROM read_csv(
+    '$sourcePathSql',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CMTE_ID':'VARCHAR',
+        'CMTE_NM':'VARCHAR',
+        'TRES_NM':'VARCHAR',
+        'CMTE_ST1':'VARCHAR',
+        'CMTE_ST2':'VARCHAR',
+        'CMTE_CITY':'VARCHAR',
+        'CMTE_ST':'VARCHAR',
+        'CMTE_ZIP':'VARCHAR',
+        'CMTE_DSGN':'VARCHAR',
+        'CMTE_TP':'VARCHAR',
+        'CMTE_PTY_AFFILIATION':'VARCHAR',
+        'CMTE_FILING_FREQ':'VARCHAR',
+        'ORG_TP':'VARCHAR',
+        'CONNECTED_ORG_NM':'VARCHAR',
+        'CAND_ID':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
+    $Cycle,
+    '$table',
+    '$zipPathSql',
+    '$entryNameSql',
+    '$targetTable',
+    (SELECT COUNT(*) FROM $targetTable),
+    NOW();
+"@
+        }
+        elseif ($table -eq 'cn') {
             $loadSql = @"
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
@@ -275,6 +394,407 @@ FROM read_csv(
         'CAND_CITY':'VARCHAR',
         'CAND_ST':'VARCHAR',
         'CAND_ZIP':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
+    $Cycle,
+    '$table',
+    '$zipPathSql',
+    '$entryNameSql',
+    '$targetTable',
+    (SELECT COUNT(*) FROM $targetTable),
+    NOW();
+"@
+        }
+        elseif ($table -eq 'indiv') {
+            $loadSql = @"
+DROP TABLE IF EXISTS $targetTable;
+CREATE TABLE $targetTable AS
+SELECT
+    CMTE_ID,
+    AMNDT_IND,
+    RPT_TP,
+    TRANSACTION_PGI,
+    IMAGE_NUM,
+    TRANSACTION_TP,
+    ENTITY_TP,
+    NAME,
+    CITY,
+    STATE,
+    ZIP_CODE,
+    EMPLOYER,
+    OCCUPATION,
+    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
+    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
+    OTHER_ID,
+    TRAN_ID,
+    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
+    MEMO_CD,
+    MEMO_TEXT,
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
+    '$zipPathSql' AS _source_zip_path,
+    '$entryNameSql' AS _source_entry_name,
+    NOW() AS _loaded_at
+FROM read_csv(
+    '$sourcePathSql',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CMTE_ID':'VARCHAR',
+        'AMNDT_IND':'VARCHAR',
+        'RPT_TP':'VARCHAR',
+        'TRANSACTION_PGI':'VARCHAR',
+        'IMAGE_NUM':'VARCHAR',
+        'TRANSACTION_TP':'VARCHAR',
+        'ENTITY_TP':'VARCHAR',
+        'NAME':'VARCHAR',
+        'CITY':'VARCHAR',
+        'STATE':'VARCHAR',
+        'ZIP_CODE':'VARCHAR',
+        'EMPLOYER':'VARCHAR',
+        'OCCUPATION':'VARCHAR',
+        'TRANSACTION_DT':'VARCHAR',
+        'TRANSACTION_AMT':'VARCHAR',
+        'OTHER_ID':'VARCHAR',
+        'TRAN_ID':'VARCHAR',
+        'FILE_NUM':'VARCHAR',
+        'MEMO_CD':'VARCHAR',
+        'MEMO_TEXT':'VARCHAR',
+        'SUB_ID':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
+    $Cycle,
+    '$table',
+    '$zipPathSql',
+    '$entryNameSql',
+    '$targetTable',
+    (SELECT COUNT(*) FROM $targetTable),
+    NOW();
+"@
+        }
+        elseif ($table -eq 'oth') {
+            $loadSql = @"
+DROP TABLE IF EXISTS $targetTable;
+CREATE TABLE $targetTable AS
+SELECT
+    CMTE_ID,
+    AMNDT_IND,
+    RPT_TP,
+    TRANSACTION_PGI,
+    IMAGE_NUM,
+    TRANSACTION_TP,
+    ENTITY_TP,
+    NAME,
+    CITY,
+    STATE,
+    ZIP_CODE,
+    EMPLOYER,
+    OCCUPATION,
+    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
+    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
+    OTHER_ID,
+    TRAN_ID,
+    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
+    MEMO_CD,
+    MEMO_TEXT,
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
+    '$zipPathSql' AS _source_zip_path,
+    '$entryNameSql' AS _source_entry_name,
+    NOW() AS _loaded_at
+FROM read_csv(
+    '$sourcePathSql',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CMTE_ID':'VARCHAR',
+        'AMNDT_IND':'VARCHAR',
+        'RPT_TP':'VARCHAR',
+        'TRANSACTION_PGI':'VARCHAR',
+        'IMAGE_NUM':'VARCHAR',
+        'TRANSACTION_TP':'VARCHAR',
+        'ENTITY_TP':'VARCHAR',
+        'NAME':'VARCHAR',
+        'CITY':'VARCHAR',
+        'STATE':'VARCHAR',
+        'ZIP_CODE':'VARCHAR',
+        'EMPLOYER':'VARCHAR',
+        'OCCUPATION':'VARCHAR',
+        'TRANSACTION_DT':'VARCHAR',
+        'TRANSACTION_AMT':'VARCHAR',
+        'OTHER_ID':'VARCHAR',
+        'TRAN_ID':'VARCHAR',
+        'FILE_NUM':'VARCHAR',
+        'MEMO_CD':'VARCHAR',
+        'MEMO_TEXT':'VARCHAR',
+        'SUB_ID':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
+    $Cycle,
+    '$table',
+    '$zipPathSql',
+    '$entryNameSql',
+    '$targetTable',
+    (SELECT COUNT(*) FROM $targetTable),
+    NOW();
+"@
+        }
+        elseif ($table -eq 'pas2') {
+            $loadSql = @"
+DROP TABLE IF EXISTS $targetTable;
+CREATE TABLE $targetTable AS
+SELECT
+    CMTE_ID,
+    AMNDT_IND,
+    RPT_TP,
+    TRANSACTION_PGI,
+    IMAGE_NUM,
+    TRANSACTION_TP,
+    ENTITY_TP,
+    NAME,
+    CITY,
+    STATE,
+    ZIP_CODE,
+    EMPLOYER,
+    OCCUPATION,
+    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
+    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
+    OTHER_ID,
+    CAND_ID,
+    TRAN_ID,
+    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
+    MEMO_CD,
+    MEMO_TEXT,
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
+    '$zipPathSql' AS _source_zip_path,
+    '$entryNameSql' AS _source_entry_name,
+    NOW() AS _loaded_at
+FROM read_csv(
+    '$sourcePathSql',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CMTE_ID':'VARCHAR',
+        'AMNDT_IND':'VARCHAR',
+        'RPT_TP':'VARCHAR',
+        'TRANSACTION_PGI':'VARCHAR',
+        'IMAGE_NUM':'VARCHAR',
+        'TRANSACTION_TP':'VARCHAR',
+        'ENTITY_TP':'VARCHAR',
+        'NAME':'VARCHAR',
+        'CITY':'VARCHAR',
+        'STATE':'VARCHAR',
+        'ZIP_CODE':'VARCHAR',
+        'EMPLOYER':'VARCHAR',
+        'OCCUPATION':'VARCHAR',
+        'TRANSACTION_DT':'VARCHAR',
+        'TRANSACTION_AMT':'VARCHAR',
+        'OTHER_ID':'VARCHAR',
+        'CAND_ID':'VARCHAR',
+        'TRAN_ID':'VARCHAR',
+        'FILE_NUM':'VARCHAR',
+        'MEMO_CD':'VARCHAR',
+        'MEMO_TEXT':'VARCHAR',
+        'SUB_ID':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
+    $Cycle,
+    '$table',
+    '$zipPathSql',
+    '$entryNameSql',
+    '$targetTable',
+    (SELECT COUNT(*) FROM $targetTable),
+    NOW();
+"@
+        }
+        elseif ($table -eq 'oppexp') {
+            $loadSql = @"
+DROP TABLE IF EXISTS $targetTable;
+CREATE TABLE $targetTable AS
+SELECT
+    CMTE_ID,
+    AMNDT_IND,
+    TRY_CAST(NULLIF(TRIM(RPT_YR), '') AS SMALLINT) AS RPT_YR,
+    RPT_TP,
+    IMAGE_NUM,
+    LINE_NUM,
+    FORM_TP_CD,
+    SCHED_TP_CD,
+    NAME,
+    CITY,
+    STATE,
+    ZIP_CODE,
+    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
+    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
+    TRANSACTION_PGI,
+    PURPOSE,
+    CATEGORY,
+    CATEGORY_DESC,
+    MEMO_CD,
+    MEMO_TEXT,
+    ENTITY_TP,
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
+    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
+    TRAN_ID,
+    BACK_REF_TRAN_ID,
+    '$zipPathSql' AS _source_zip_path,
+    '$entryNameSql' AS _source_entry_name,
+    NOW() AS _loaded_at
+FROM read_csv(
+    '$sourcePathSql',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CMTE_ID':'VARCHAR',
+        'AMNDT_IND':'VARCHAR',
+        'RPT_YR':'VARCHAR',
+        'RPT_TP':'VARCHAR',
+        'IMAGE_NUM':'VARCHAR',
+        'LINE_NUM':'VARCHAR',
+        'FORM_TP_CD':'VARCHAR',
+        'SCHED_TP_CD':'VARCHAR',
+        'NAME':'VARCHAR',
+        'CITY':'VARCHAR',
+        'STATE':'VARCHAR',
+        'ZIP_CODE':'VARCHAR',
+        'TRANSACTION_DT':'VARCHAR',
+        'TRANSACTION_AMT':'VARCHAR',
+        'TRANSACTION_PGI':'VARCHAR',
+        'PURPOSE':'VARCHAR',
+        'CATEGORY':'VARCHAR',
+        'CATEGORY_DESC':'VARCHAR',
+        'MEMO_CD':'VARCHAR',
+        'MEMO_TEXT':'VARCHAR',
+        'ENTITY_TP':'VARCHAR',
+        'SUB_ID':'VARCHAR',
+        'FILE_NUM':'VARCHAR',
+        'TRAN_ID':'VARCHAR',
+        'BACK_REF_TRAN_ID':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
+    $Cycle,
+    '$table',
+    '$zipPathSql',
+    '$entryNameSql',
+    '$targetTable',
+    (SELECT COUNT(*) FROM $targetTable),
+    NOW();
+"@
+        }
+        elseif ($table -eq 'weball') {
+            $loadSql = @"
+DROP TABLE IF EXISTS $targetTable;
+CREATE TABLE $targetTable AS
+SELECT
+    CAND_ID,
+    CAND_NAME,
+    CAND_ICI,
+    PTY_CD,
+    CAND_PTY_AFFILIATION,
+    TRY_CAST(NULLIF(TRIM(TTL_RECEIPTS), '') AS DECIMAL(14,2)) AS TTL_RECEIPTS,
+    TRY_CAST(NULLIF(TRIM(TRANS_FROM_AUTH), '') AS DECIMAL(14,2)) AS TRANS_FROM_AUTH,
+    TRY_CAST(NULLIF(TRIM(TTL_DISB), '') AS DECIMAL(14,2)) AS TTL_DISB,
+    TRY_CAST(NULLIF(TRIM(TRANS_TO_AUTH), '') AS DECIMAL(14,2)) AS TRANS_TO_AUTH,
+    TRY_CAST(NULLIF(TRIM(COH_BOP), '') AS DECIMAL(14,2)) AS COH_BOP,
+    TRY_CAST(NULLIF(TRIM(COH_COP), '') AS DECIMAL(14,2)) AS COH_COP,
+    TRY_CAST(NULLIF(TRIM(CAND_CONTRIB), '') AS DECIMAL(14,2)) AS CAND_CONTRIB,
+    TRY_CAST(NULLIF(TRIM(CAND_LOANS), '') AS DECIMAL(14,2)) AS CAND_LOANS,
+    TRY_CAST(NULLIF(TRIM(OTHER_LOANS), '') AS DECIMAL(14,2)) AS OTHER_LOANS,
+    TRY_CAST(NULLIF(TRIM(CAND_LOAN_REPAY), '') AS DECIMAL(14,2)) AS CAND_LOAN_REPAY,
+    TRY_CAST(NULLIF(TRIM(OTHER_LOAN_REPAY), '') AS DECIMAL(14,2)) AS OTHER_LOAN_REPAY,
+    TRY_CAST(NULLIF(TRIM(DEBTS_OWED_BY), '') AS DECIMAL(14,2)) AS DEBTS_OWED_BY,
+    TRY_CAST(NULLIF(TRIM(TTL_INDIV_CONTRIB), '') AS DECIMAL(14,2)) AS TTL_INDIV_CONTRIB,
+    CAND_OFFICE_ST,
+    CAND_OFFICE_DISTRICT,
+    SPEC_ELECTION,
+    PRIM_ELECTION,
+    RUN_ELECTION,
+    GEN_ELECTION,
+    TRY_CAST(NULLIF(TRIM(GEN_ELECTION_PRECENT), '') AS DECIMAL(7,4)) AS GEN_ELECTION_PRECENT,
+    TRY_CAST(NULLIF(TRIM(OTHER_POL_CMTE_CONTRIB), '') AS DECIMAL(14,2)) AS OTHER_POL_CMTE_CONTRIB,
+    TRY_CAST(NULLIF(TRIM(POL_PTY_CONTRIB), '') AS DECIMAL(14,2)) AS POL_PTY_CONTRIB,
+    COALESCE(
+        CAST(TRY_STRPTIME(NULLIF(TRIM(CVG_END_DT), ''), '%m/%d/%Y') AS DATE),
+        CAST(TRY_STRPTIME(NULLIF(TRIM(CVG_END_DT), ''), '%m%d%Y') AS DATE)
+    ) AS CVG_END_DT,
+    TRY_CAST(NULLIF(TRIM(INDIV_REFUNDS), '') AS DECIMAL(14,2)) AS INDIV_REFUNDS,
+    TRY_CAST(NULLIF(TRIM(CMTE_REFUNDS), '') AS DECIMAL(14,2)) AS CMTE_REFUNDS,
+    '$zipPathSql' AS _source_zip_path,
+    '$entryNameSql' AS _source_entry_name,
+    NOW() AS _loaded_at
+FROM read_csv(
+    '$sourcePathSql',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CAND_ID':'VARCHAR',
+        'CAND_NAME':'VARCHAR',
+        'CAND_ICI':'VARCHAR',
+        'PTY_CD':'VARCHAR',
+        'CAND_PTY_AFFILIATION':'VARCHAR',
+        'TTL_RECEIPTS':'VARCHAR',
+        'TRANS_FROM_AUTH':'VARCHAR',
+        'TTL_DISB':'VARCHAR',
+        'TRANS_TO_AUTH':'VARCHAR',
+        'COH_BOP':'VARCHAR',
+        'COH_COP':'VARCHAR',
+        'CAND_CONTRIB':'VARCHAR',
+        'CAND_LOANS':'VARCHAR',
+        'OTHER_LOANS':'VARCHAR',
+        'CAND_LOAN_REPAY':'VARCHAR',
+        'OTHER_LOAN_REPAY':'VARCHAR',
+        'DEBTS_OWED_BY':'VARCHAR',
+        'TTL_INDIV_CONTRIB':'VARCHAR',
+        'CAND_OFFICE_ST':'VARCHAR',
+        'CAND_OFFICE_DISTRICT':'VARCHAR',
+        'SPEC_ELECTION':'VARCHAR',
+        'PRIM_ELECTION':'VARCHAR',
+        'RUN_ELECTION':'VARCHAR',
+        'GEN_ELECTION':'VARCHAR',
+        'GEN_ELECTION_PRECENT':'VARCHAR',
+        'OTHER_POL_CMTE_CONTRIB':'VARCHAR',
+        'POL_PTY_CONTRIB':'VARCHAR',
+        'CVG_END_DT':'VARCHAR',
+        'INDIV_REFUNDS':'VARCHAR',
+        'CMTE_REFUNDS':'VARCHAR'
     }
 );
 

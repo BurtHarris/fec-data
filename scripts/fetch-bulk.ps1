@@ -17,36 +17,21 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$tableZipStemMap = [ordered]@{
-    cm = 'cm'
-    cn = 'cn'
-    itcont = 'indiv'
-    itoth = 'oth'
-    itpas2 = 'pas2'
-    oppexp = 'oppexp'
-    weball = 'weball'
-}
-
-$tableAliasMap = @{
-    indiv = 'itcont'
-    oth = 'itoth'
-    pas2 = 'itpas2'
-}
-
 $defaultTables = @(
+    'ccl',
     'cm',
     'cn',
-    'itcont',
-    'itoth',
-    'itpas2',
+    'indiv',
     'oppexp',
+    'oth',
+    'pas2',
     'weball'
 )
 
 if (-not $Cycle) {
     Write-Error (
         'Usage: .\scripts\fetch-bulk.ps1 <cycle> [table1,table2,...] [-Force] [-Parallelism N]`n' +
-        '  e.g. .\scripts\fetch-bulk.ps1 2026 itcont,weball -Force -Parallelism 4'
+        '  e.g. .\scripts\fetch-bulk.ps1 2026 indiv,weball -Force -Parallelism 4'
     )
     exit 1
 }
@@ -73,25 +58,9 @@ else {
     }
 }
 
-$Tables = @(
-    $Tables | ForEach-Object {
-        if ($tableAliasMap.ContainsKey($_)) {
-            $tableAliasMap[$_]
-        }
-        else {
-            $_
-        }
-    } | Select-Object -Unique
-)
-
-$validTableNames = @($tableZipStemMap.Keys)
-$invalidTables = @($Tables | Where-Object { $_ -notin $validTableNames })
+$invalidTables = @($Tables | Where-Object { $_ -notin $defaultTables })
 if ($invalidTables.Count -gt 0) {
-    $legacyInfo = 'Legacy aliases accepted: indiv->itcont, oth->itoth, pas2->itpas2.'
-    Write-Error (
-        "Unknown table name(s): $($invalidTables -join ', '). " +
-        "Valid tables: $($validTableNames -join ', '). $legacyInfo"
-    )
+    Write-Error "Unknown table name(s): $($invalidTables -join ', '). Valid tables: $($defaultTables -join ', ')."
     exit 1
 }
 
@@ -126,7 +95,7 @@ $yy = $Cycle.Substring(2)
 $baseUrl = "https://www.fec.gov/files/bulk-downloads/$Cycle"
 $destDir = Join-Path $repoRoot "data\$Cycle"
 
-$files = @($Tables | ForEach-Object { "$($tableZipStemMap[$_])$yy" })
+$files = @($Tables | ForEach-Object { "$($_)$yy" })
 
 New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 

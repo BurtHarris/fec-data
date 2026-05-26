@@ -2,7 +2,11 @@
 param(
     [Parameter(Position = 0, HelpMessage = 'Election cycle year (e.g. 2026)')]
     [string]$Cycle = '2026',
-    [Parameter(Position = 1, ValueFromRemainingArguments = $true, HelpMessage = 'Table names without cycle suffix (e.g. indiv, weball).')]
+    [Parameter(
+        Position = 1,
+        ValueFromRemainingArguments = $true,
+        HelpMessage = 'Table names without cycle suffix (e.g. indiv, weball).'
+    )]
     [string[]]$Tables,
     [Parameter(HelpMessage = 'Force download even when local file and signature match.')]
     [switch]$Force,
@@ -24,7 +28,10 @@ $defaultTables = @(
 )
 
 if (-not $Cycle) {
-    Write-Error 'Usage: .\scripts\fetch-bulk.ps1 <cycle> [table1 table2 ...] [-Force] [-Parallelism N]`n  e.g. .\scripts\fetch-bulk.ps1 2026 indiv weball -Force -Parallelism 4'
+    Write-Error (
+        'Usage: .\scripts\fetch-bulk.ps1 <cycle> [table1,table2,...] [-Force] [-Parallelism N]`n' +
+        '  e.g. .\scripts\fetch-bulk.ps1 2026 indiv,weball -Force -Parallelism 4'
+    )
     exit 1
 }
 
@@ -36,92 +43,50 @@ if ($Cycle -notmatch '^\d{4}$') {
 if (-not $Tables -or $Tables.Count -eq 0) {
     $Tables = $defaultTables
 }
-
-function Get-RemoteSignature {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Url
+else {
+    $Tables = @(
+        $Tables |
+            ForEach-Object { $_ -split ',' } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() } |
+            Where-Object { $_ -ne '' }
     )
 
-    $response = Invoke-WebRequest -Uri $Url -Method Head -MaximumRedirection 10
-    $etag = [string]$response.Headers['ETag']
-    $lastModified = [string]$response.Headers['Last-Modified']
-    $contentLength = [string]$response.Headers['Content-Length']
-
-    return "$etag|$lastModified|$contentLength"
+    if ($Tables.Count -eq 0) {
+        Write-Error 'Tables parameter is empty. Provide comma-separated table names such as indiv,weball.'
+        exit 1
+    }
 }
 
-function Save-File {
+$invalidTables = @($Tables | Where-Object { $_ -notin $defaultTables })
+if ($invalidTables.Count -gt 0) {
+    Write-Error "Unknown table name(s): $($invalidTables -join ', '). Valid tables: $($defaultTables -join ', ')."
+    exit 1
+}
+
+function Format-ProgressStatus {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Url,
-        [Parameter(Mandatory = $true)]
-        [string]$Destination,
-        [Parameter(Mandatory = $true)]
-        [int]$ProgressId,
-        [Parameter(Mandatory = $true)]
-        [string]$Activity
+        [string]$Text
     )
 
-    $handler = [System.Net.Http.HttpClientHandler]::new()
-    $handler.AllowAutoRedirect = $true
-    $client = [System.Net.Http.HttpClient]::new($handler)
-    $request = $null
-    $response = $null
-    $responseStream = $null
-    $fileStream = $null
+    return "[ $Text ]"
+}
 
-    try {
-        $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $Url)
-        $response = $client.Send($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead)
-        [void]$response.EnsureSuccessStatusCode()
+function New-ProgressBarLine {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$Percent,
+        [int]$Width = 22
+    )
 
-        $totalBytes = $response.Content.Headers.ContentLength
-        $responseStream = $response.Content.ReadAsStream()
-
-        $destinationDir = Split-Path -Parent $Destination
-        if ($destinationDir) {
-            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
-        }
-
-        $fileStream = [System.IO.File]::Open($Destination, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-        $buffer = New-Object byte[] (128KB)
-        $totalRead = [int64]0
-
-        while (($bytesRead = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $fileStream.Write($buffer, 0, $bytesRead)
-            $totalRead += $bytesRead
-
-            if ($totalBytes -and $totalBytes -gt 0) {
-                $percent = [int](($totalRead * 100) / $totalBytes)
-                Write-Progress -Id $ProgressId -Activity $Activity -Status ("{0:N1} MB / {1:N1} MB" -f ($totalRead / 1MB), ($totalBytes / 1MB)) -PercentComplete $percent
-            }
-            else {
-                Write-Progress -Id $ProgressId -Activity $Activity -Status ("{0:N1} MB downloaded" -f ($totalRead / 1MB))
-            }
-        }
+    $boundedPercent = [Math]::Max(0, [Math]::Min(100, $Percent))
+    $filled = [int][Math]::Round(($boundedPercent / 100.0) * $Width)
+    if ($filled -gt $Width) {
+        $filled = $Width
     }
-    finally {
-        if ($fileStream) {
-            $fileStream.Dispose()
-        }
+    $empty = $Width - $filled
 
-        if ($responseStream) {
-            $responseStream.Dispose()
-        }
-
-        if ($response) {
-            $response.Dispose()
-        }
-
-        if ($request) {
-            $request.Dispose()
-        }
-
-        $client.Dispose()
-        $handler.Dispose()
-        Write-Progress -Id $ProgressId -Activity $Activity -Completed
-    }
+    return ('[' + ('#' * $filled) + (' ' * $empty) + ']')
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -129,7 +94,7 @@ $yy = $Cycle.Substring(2)
 $baseUrl = "https://www.fec.gov/files/bulk-downloads/$Cycle"
 $destDir = Join-Path $repoRoot "data\$Cycle"
 
-$files = $Tables | ForEach-Object { "$($_)$yy" }
+$files = @($Tables | ForEach-Object { "$($_)$yy" })
 
 New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 
@@ -171,37 +136,30 @@ try {
         try {
             $currentFile++
             $zipPath = Join-Path $destDir "$name.zip"
+
             $url = "$baseUrl/$name.zip"
             $metaPath = Join-Path $destDir ".$name.meta"
 
-            Write-Progress -Id $progressId -Activity "Preparing FEC bulk downloads ($Cycle)" -Status "Checking $name.zip ($currentFile/$totalFiles)" -PercentComplete ([int](($currentFile - 1) * 100 / $totalFiles))
-
-            $remoteSignature = Get-RemoteSignature -Url $url
-            $previousSignature = ''
-
-            if (Test-Path $metaPath) {
-                $previousSignature = (Get-Content -Path $metaPath -Raw).Trim()
-            }
-
-            if ((-not $Force) -and (Test-Path $zipPath) -and $previousSignature -and ($remoteSignature -eq $previousSignature)) {
-                Write-Progress -Id $progressId -Activity "Preparing FEC bulk downloads ($Cycle)" -Status "Skipped $name.zip (unchanged)" -PercentComplete ([int]($currentFile * 100 / $totalFiles))
-                Write-Verbose "SKIPPED  $name.zip"
-                $skippedCount++
-                $statusMap[$name] = 'Skipped'
-                $bytesMap[$name] = 0
-                $totalMap[$name] = 0
-                continue
-            }
+            Write-Progress `
+                -Id $progressId `
+                -Activity "Preparing FEC bulk downloads ($Cycle)" `
+                -Status (Format-ProgressStatus "queueing $name.zip ($currentFile/$totalFiles)") `
+                -PercentComplete ([int]($currentFile * 100 / $totalFiles))
 
             $downloadPlans += [PSCustomObject]@{
                 Name = $name
                 Url = $url
                 ZipPath = $zipPath
                 MetaPath = $metaPath
-                RemoteSignature = $remoteSignature
+                StatusPath = Join-Path $repoRoot ("tmp\\{0}.curl.status" -f $name)
+                ErrorPath = Join-Path $repoRoot ("tmp\\{0}.curl.err" -f $name)
             }
             $statusMap[$name] = 'Queued'
-            Write-Progress -Id $progressId -Activity "Preparing FEC bulk downloads ($Cycle)" -Status "Queued $name.zip" -PercentComplete ([int]($currentFile * 100 / $totalFiles))
+            Write-Progress `
+                -Id $progressId `
+                -Activity "Preparing FEC bulk downloads ($Cycle)" `
+                -Status (Format-ProgressStatus "queued $name.zip") `
+                -PercentComplete ([int]($currentFile * 100 / $totalFiles))
         }
         catch {
             $failedCount++
@@ -215,6 +173,8 @@ try {
     if ($downloadPlans.Count -gt 0) {
         Write-Host "Starting $($downloadPlans.Count) download(s) in parallel..."
 
+        # Parallel scheduler: keep a queue of pending plans and a list of active curl processes.
+        # The inner loop launches up to -Parallelism workers; the outer loop monitors completion.
         $pendingPlans = [System.Collections.Generic.Queue[object]]::new()
         foreach ($plan in $downloadPlans) {
             $pendingPlans.Enqueue($plan)
@@ -223,116 +183,131 @@ try {
         $activeJobs = @()
         $downloadResults = @()
         $parallelParentProgressId = 10
-        $parallelChildProgressId = 11
-
-        $downloadScript = {
-            param($plan, $statusMap, $bytesMap, $totalMap)
-
-            $handler = [System.Net.Http.HttpClientHandler]::new()
-            $handler.AllowAutoRedirect = $true
-            $client = [System.Net.Http.HttpClient]::new($handler)
-            $request = $null
-            $response = $null
-            $responseStream = $null
-            $fileStream = $null
-
-            try {
-                $statusMap[$plan.Name] = 'Downloading'
-                $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $plan.Url)
-                $response = $client.Send($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead)
-                [void]$response.EnsureSuccessStatusCode()
-                $contentLength = $response.Content.Headers.ContentLength
-                if ($contentLength -and $contentLength -gt 0) {
-                    $totalMap[$plan.Name] = [int64]$contentLength
-                }
-                $responseStream = $response.Content.ReadAsStream()
-
-                $destinationDir = Split-Path -Parent $plan.ZipPath
-                if ($destinationDir) {
-                    New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
-                }
-
-                $fileStream = [System.IO.File]::Open($plan.ZipPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-                $buffer = New-Object byte[] (128KB)
-                $totalRead = [int64]0
-                while (($bytesRead = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-                    $fileStream.Write($buffer, 0, $bytesRead)
-                    $totalRead += $bytesRead
-                    $bytesMap[$plan.Name] = $totalRead
-                }
-
-                Set-Content -Path $plan.MetaPath -Value $plan.RemoteSignature
-                $statusMap[$plan.Name] = 'Downloaded'
-
-                [PSCustomObject]@{
-                    Name = $plan.Name
-                    Status = 'Downloaded'
-                    Error = ''
-                }
-            }
-            catch {
-                $statusMap[$plan.Name] = 'Failed'
-                [PSCustomObject]@{
-                    Name = $plan.Name
-                    Status = 'Failed'
-                    Error = $_.Exception.Message
-                }
-            }
-            finally {
-                if ($fileStream) {
-                    $fileStream.Dispose()
-                }
-
-                if ($responseStream) {
-                    $responseStream.Dispose()
-                }
-
-                if ($response) {
-                    $response.Dispose()
-                }
-
-                if ($request) {
-                    $request.Dispose()
-                }
-
-                $client.Dispose()
-                $handler.Dispose()
-            }
-        }
 
         while (($pendingPlans.Count -gt 0) -or ($activeJobs.Count -gt 0)) {
             while (($activeJobs.Count -lt $Parallelism) -and ($pendingPlans.Count -gt 0)) {
                 $nextPlan = $pendingPlans.Dequeue()
-                $job = Start-ThreadJob -ScriptBlock $downloadScript -ArgumentList $nextPlan, $statusMap, $bytesMap, $totalMap
+                $destinationDir = Split-Path -Parent $nextPlan.ZipPath
+                if ($destinationDir) {
+                    New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+                }
+
+                New-Item -ItemType Directory -Path (Split-Path -Parent $nextPlan.StatusPath) -Force | Out-Null
+                if (Test-Path $nextPlan.StatusPath) {
+                    Remove-Item -Path $nextPlan.StatusPath -Force
+                }
+                if (Test-Path $nextPlan.ErrorPath) {
+                    Remove-Item -Path $nextPlan.ErrorPath -Force
+                }
+
+                $statusMap[$nextPlan.Name] = 'Downloading'
+                $bytesMap[$nextPlan.Name] = 0
+                $totalMap[$nextPlan.Name] = 0
+
+                $curlArgs = @(
+                    '-L',
+                    '--fail',
+                    '--silent',
+                    '--show-error',
+                    '--write-out', '%{http_code}|%{size_download}|%{size_upload}',
+                    '--etag-save', $nextPlan.MetaPath,
+                    '--output', $nextPlan.ZipPath,
+                    $nextPlan.Url
+                )
+
+                if ((-not $Force) -and (Test-Path $nextPlan.MetaPath)) {
+                    $curlArgs = @('--etag-compare', $nextPlan.MetaPath) + $curlArgs
+                }
+
+                $proc = Start-Process `
+                    -FilePath 'curl.exe' `
+                    -ArgumentList $curlArgs `
+                    -NoNewWindow `
+                    -PassThru `
+                    -RedirectStandardOutput $nextPlan.StatusPath `
+                    -RedirectStandardError $nextPlan.ErrorPath
                 $activeJobs += [PSCustomObject]@{
-                    Job = $job
-                    Name = $nextPlan.Name
+                    Process = $proc
+                    Plan = $nextPlan
                 }
             }
 
-            $completedItems = @($activeJobs | Where-Object { $_.Job.State -match 'Completed|Failed|Stopped' })
+            # Progress source for active downloads: poll current zip file size on disk.
+            foreach ($activeItem in $activeJobs) {
+                if (Test-Path $activeItem.Plan.ZipPath) {
+                    $bytesMap[$activeItem.Plan.Name] = (Get-Item -Path $activeItem.Plan.ZipPath).Length
+                }
+            }
+
+            $completedItems = @($activeJobs | Where-Object { $_.Process.HasExited })
             foreach ($completedItem in $completedItems) {
-                $result = Receive-Job -Job $completedItem.Job -Wait -AutoRemoveJob
-                if ($result) {
-                    $downloadResults += $result
+                if ($completedItem.Process.ExitCode -eq 0) {
+                    $writeOut = ''
+                    if (Test-Path $completedItem.Plan.StatusPath) {
+                        $writeOut = (Get-Content -Path $completedItem.Plan.StatusPath -Raw).Trim()
+                    }
+
+                    $httpCode = ''
+                    if ($writeOut) {
+                        $httpCode = $writeOut.Split('|')[0]
+                    }
+
+                    if ($httpCode -eq '304') {
+                        $statusMap[$completedItem.Plan.Name] = 'Skipped'
+                        $downloadResults += [PSCustomObject]@{
+                            Name = $completedItem.Plan.Name
+                            Status = 'Skipped'
+                            Error = ''
+                        }
+                    }
+                    else {
+                        $statusMap[$completedItem.Plan.Name] = 'Completed'
+                        $downloadResults += [PSCustomObject]@{
+                            Name = $completedItem.Plan.Name
+                            Status = 'Completed'
+                            Error = ''
+                        }
+                    }
                 }
                 else {
-                    $downloadResults += [PSCustomObject]@{
-                        Name = $completedItem.Name
-                        Status = 'Failed'
-                        Error = 'Download job ended without result.'
+                    $statusMap[$completedItem.Plan.Name] = 'Failed'
+                    $curlError = "curl exited with code $($completedItem.Process.ExitCode)"
+                    if (Test-Path $completedItem.Plan.ErrorPath) {
+                        $stderrText = (Get-Content -Path $completedItem.Plan.ErrorPath -Raw).Trim()
+                        if ($stderrText) {
+                            $curlError = "${curlError}: $stderrText"
+                        }
                     }
+
+                    $downloadResults += [PSCustomObject]@{
+                        Name = $completedItem.Plan.Name
+                        Status = 'Failed'
+                        Error = $curlError
+                    }
+                }
+
+                if (Test-Path $completedItem.Plan.StatusPath) {
+                    Remove-Item -Path $completedItem.Plan.StatusPath -Force
+                }
+                if (Test-Path $completedItem.Plan.ErrorPath) {
+                    Remove-Item -Path $completedItem.Plan.ErrorPath -Force
                 }
             }
 
             if ($completedItems.Count -gt 0) {
-                $activeJobs = @($activeJobs | Where-Object { $_.Job.State -notmatch 'Completed|Failed|Stopped' })
+                $activeJobs = @($activeJobs | Where-Object { -not $_.Process.HasExited })
             }
 
             $doneCount = $downloadResults.Count
             $queueTotal = $downloadPlans.Count
-            Write-Progress -Id $parallelParentProgressId -Activity "Downloading FEC bulk data ($Cycle)" -Status "$doneCount / $queueTotal completed" -PercentComplete ([int](($doneCount * 100) / $queueTotal))
+            # Parent progress bar reflects overall completion across all requested tables.
+            Write-Progress `
+                -Id $parallelParentProgressId `
+                -Activity "Downloading FEC bulk data ($Cycle)" `
+                -Status (Format-ProgressStatus "$doneCount / $queueTotal completed") `
+                -PercentComplete ([int](($doneCount * 100) / $queueTotal))
 
+            # Child progress bars render one row per table using statusMap + bytesMap snapshots.
             foreach ($tableName in $files) {
                 $tableProgressId = $tableProgressIds[$tableName]
                 $tableStatus = 'Pending'
@@ -353,37 +328,86 @@ try {
                 if ($tableStatus -eq 'Downloading') {
                     if ($tableTotal -gt 0) {
                         $percent = [int](($tableBytes * 100) / $tableTotal)
-                        Write-Progress -Id $tableProgressId -ParentId $parallelParentProgressId -Activity "$tableName.zip" -Status ("{0:N1} MB / {1:N1} MB" -f ($tableBytes / 1MB), ($tableTotal / 1MB)) -PercentComplete $percent
+                        Write-Progress `
+                            -Id $tableProgressId `
+                            -ParentId $parallelParentProgressId `
+                            -Activity "$tableName.zip" `
+                            -Status (Format-ProgressStatus (
+                                "{0:N1} MB / {1:N1} MB" -f ($tableBytes / 1MB), ($tableTotal / 1MB)
+                            )) `
+                            -PercentComplete $percent
                     }
                     else {
-                        Write-Progress -Id $tableProgressId -ParentId $parallelParentProgressId -Activity "$tableName.zip" -Status ("{0:N1} MB downloaded" -f ($tableBytes / 1MB))
+                        Write-Progress `
+                            -Id $tableProgressId `
+                            -ParentId $parallelParentProgressId `
+                            -Activity "$tableName.zip" `
+                            -Status (Format-ProgressStatus (
+                                "{0:N1} MB downloaded" -f ($tableBytes / 1MB)
+                            ))
                     }
                 }
                 elseif ($tableStatus -eq 'Queued' -or $tableStatus -eq 'Pending') {
-                    Write-Progress -Id $tableProgressId -ParentId $parallelParentProgressId -Activity "$tableName.zip" -Status 'Queued' -PercentComplete 0
+                    Write-Progress `
+                        -Id $tableProgressId `
+                        -ParentId $parallelParentProgressId `
+                        -Activity "$tableName.zip" `
+                        -Status (Format-ProgressStatus 'queued') `
+                        -PercentComplete 0
                 }
                 elseif ($tableStatus -eq 'Skipped') {
-                    Write-Progress -Id $tableProgressId -ParentId $parallelParentProgressId -Activity "$tableName.zip" -Status 'Skipped (unchanged)' -PercentComplete 100
+                    Write-Progress `
+                        -Id $tableProgressId `
+                        -ParentId $parallelParentProgressId `
+                        -Activity "$tableName.zip" `
+                        -Status (Format-ProgressStatus 'skipped (unchanged)') `
+                        -PercentComplete 100
                 }
-                elseif ($tableStatus -eq 'Downloaded') {
-                    Write-Progress -Id $tableProgressId -ParentId $parallelParentProgressId -Activity "$tableName.zip" -Status 'Downloaded' -PercentComplete 100
+                elseif ($tableStatus -eq 'Completed') {
+                    Write-Progress `
+                        -Id $tableProgressId `
+                        -ParentId $parallelParentProgressId `
+                        -Activity "$tableName.zip" `
+                        -Status (Format-ProgressStatus 'completed') `
+                        -PercentComplete 100
                 }
                 else {
-                    Write-Progress -Id $tableProgressId -ParentId $parallelParentProgressId -Activity "$tableName.zip" -Status 'Failed' -PercentComplete 100
+                    Write-Progress `
+                        -Id $tableProgressId `
+                        -ParentId $parallelParentProgressId `
+                        -Activity "$tableName.zip" `
+                        -Status (Format-ProgressStatus 'failed') `
+                        -PercentComplete 100
                 }
             }
 
             if ($activeJobs.Count -gt 0) {
-                Wait-Job -Job ($activeJobs | Select-Object -ExpandProperty Job) -Any -Timeout 1 | Out-Null
+                $activeProcessIds = @(
+                    $activeJobs |
+                        Where-Object { $_.Process -and (-not $_.Process.HasExited) -and $_.Process.Id } |
+                        ForEach-Object { $_.Process.Id }
+                )
+
+                if ($activeProcessIds.Count -gt 0) {
+                    Wait-Process -Id $activeProcessIds -Timeout 1 -ErrorAction SilentlyContinue
+                }
             }
         }
 
-        Write-Progress -Id $parallelParentProgressId -Activity "Downloading FEC bulk data ($Cycle)" -Status "$($downloadResults.Count) / $($downloadPlans.Count) completed" -PercentComplete 100
+        Write-Progress `
+            -Id $parallelParentProgressId `
+            -Activity "Downloading FEC bulk data ($Cycle)" `
+            -Status (Format-ProgressStatus "$($downloadResults.Count) / $($downloadPlans.Count) completed") `
+            -PercentComplete 100
 
         foreach ($result in $downloadResults) {
-            if ($result.Status -eq 'Downloaded') {
+            if ($result.Status -eq 'Completed') {
                 $downloadedCount++
-                Write-Verbose "DOWNLOADED  $($result.Name).zip"
+                Write-Verbose "COMPLETED  $($result.Name).zip"
+            }
+            elseif ($result.Status -eq 'Skipped') {
+                $skippedCount++
+                Write-Verbose "SKIPPED  $($result.Name).zip"
             }
             else {
                 $failedCount++
@@ -392,11 +416,33 @@ try {
         }
 
         if ($failedCount -gt 0) {
-            throw "$failedCount download(s) failed. Re-run with -Verbose for details."
+            Write-Error "$failedCount download(s) failed. Re-run with -Verbose for details."
+            exit 1
         }
     }
 
-    Write-Host "Completed cycle ${Cycle}: downloaded $downloadedCount, skipped $skippedCount, failed $failedCount, total $totalFiles."
+    Write-Host (
+        "Completed cycle ${Cycle}: completed $downloadedCount, skipped $skippedCount, " +
+        "failed $failedCount, total $totalFiles."
+    )
+    Write-Host ''
+    Write-Host 'Final table status bars (persistent):'
+    # Write-Progress UI is transient in some hosts; print a static summary so results remain visible.
+    foreach ($tableName in $files) {
+        $finalStatus = 'pending'
+        if ($statusMap.ContainsKey($tableName)) {
+            $finalStatus = $statusMap[$tableName].ToLowerInvariant()
+        }
+
+        $finalPercent = 0
+        if ($finalStatus -eq 'completed' -or $finalStatus -eq 'skipped' -or $finalStatus -eq 'failed') {
+            $finalPercent = 100
+        }
+
+        $bar = New-ProgressBarLine -Percent $finalPercent -Width 22
+        $statusLabel = Format-ProgressStatus $finalStatus
+        Write-Host ("{0,-12} {1} {2,4}%  {3}" -f "$tableName.zip", $bar, $finalPercent, $statusLabel)
+    }
 }
 finally {
     Pop-Location

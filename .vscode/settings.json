@@ -14,8 +14,7 @@
             "alias": "fec",
             "type": "file",
             "path": "e:\\fec-data\\db\\fec.duckdb",
-            "readOnly": true,
-            "attached": true
+            "attached": false
         }
     ],
     "duckdb.defaultDatabase": "fec"

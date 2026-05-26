@@ -12,7 +12,9 @@ param(
     [switch]$Force,
     [Parameter(HelpMessage = 'Maximum number of concurrent downloads.')]
     [ValidateRange(1, 16)]
-    [int]$Parallelism = 4
+    [int]$Parallelism = 4,
+    [Parameter(HelpMessage = 'Path to the DuckDB database file used for provenance logging.')]
+    [string]$DbPath = 'db/fec.duckdb'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,14 +92,124 @@ function New-ProgressBarLine {
     return ('[' + ('#' * $filled) + (' ' * $empty) + ']')
 }
 
+function Get-CurlHeaderMap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HeaderPath
+    )
+
+    $latestHeaders = @{}
+    if (-not (Test-Path -Path $HeaderPath -PathType Leaf)) {
+        return $latestHeaders
+    }
+
+    $currentHeaders = @{}
+    $headerLines = Get-Content -Path $HeaderPath
+    foreach ($line in $headerLines) {
+        if ($line -match '^HTTP/\d+(?:\.\d+)?\s+\d+') {
+            if ($currentHeaders.Count -gt 0) {
+                $latestHeaders = $currentHeaders
+            }
+            $currentHeaders = @{}
+            continue
+        }
+
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            if ($currentHeaders.Count -gt 0) {
+                $latestHeaders = $currentHeaders
+            }
+            continue
+        }
+
+        $separatorIndex = $line.IndexOf(':')
+        if ($separatorIndex -le 0) {
+            continue
+        }
+
+        $headerName = $line.Substring(0, $separatorIndex).Trim().ToLowerInvariant()
+        $headerValue = $line.Substring($separatorIndex + 1).Trim()
+        $currentHeaders[$headerName] = $headerValue
+    }
+
+    if ($currentHeaders.Count -gt 0) {
+        $latestHeaders = $currentHeaders
+    }
+
+    return $latestHeaders
+}
+
+function To-SqlStringOrNull {
+    param(
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return 'NULL'
+    }
+
+    return "'$($Value.Replace("'", "''"))'"
+}
+
+function To-SqlBigIntOrNull {
+    param(
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return 'NULL'
+    }
+
+    $parsedValue = [int64]0
+    if ([int64]::TryParse($Value, [ref]$parsedValue)) {
+        return $parsedValue.ToString()
+    }
+
+    return 'NULL'
+}
+
+function To-SqlIntOrNull {
+    param(
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return 'NULL'
+    }
+
+    $parsedValue = [int]0
+    if ([int]::TryParse($Value, [ref]$parsedValue)) {
+        return $parsedValue.ToString()
+    }
+
+    return 'NULL'
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $yy = $Cycle.Substring(2)
 $baseUrl = "https://www.fec.gov/files/bulk-downloads/$Cycle"
 $destDir = Join-Path $repoRoot "data\$Cycle"
+$dbPathResolved = if ([System.IO.Path]::IsPathRooted($DbPath)) { $DbPath } else { Join-Path $repoRoot $DbPath }
+$schemaSqlPath = Join-Path $repoRoot 'sql\schema\001_create_fec_schemas.sql'
 
 $files = @($Tables | ForEach-Object { "$($_)$yy" })
 
 New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+New-Item -ItemType Directory -Path (Split-Path -Parent $dbPathResolved) -Force | Out-Null
+
+if (-not (Test-Path -Path $schemaSqlPath -PathType Leaf)) {
+    Write-Error "Schema SQL not found: $schemaSqlPath"
+    exit 1
+}
+
+$initCommand = ".read '$($schemaSqlPath.Replace('\\', '/'))'"
+duckdb $dbPathResolved -c $initCommand
+if ($LASTEXITCODE -ne 0) {
+    Write-Error 'Failed to initialize DuckDB schema objects for fetch provenance.'
+    exit 1
+}
 
 Write-Host "Downloading FEC bulk data - cycle $Cycle"
 Write-Host "Tables: $($Tables -join ', ')"
@@ -137,6 +249,7 @@ try {
         try {
             $currentFile++
             $zipPath = Join-Path $destDir "$name.zip"
+            $tableName = if ($name.EndsWith($yy)) { $name.Substring(0, $name.Length - $yy.Length) } else { $name }
 
             $url = "$baseUrl/$name.zip"
             $metaPath = Join-Path $destDir ".$name.meta"
@@ -149,11 +262,13 @@ try {
 
             $downloadPlans += [PSCustomObject]@{
                 Name = $name
+                TableName = $tableName
                 Url = $url
                 ZipPath = $zipPath
                 MetaPath = $metaPath
                 StatusPath = Join-Path $repoRoot ("tmp\\{0}.curl.status" -f $name)
                 ErrorPath = Join-Path $repoRoot ("tmp\\{0}.curl.err" -f $name)
+                HeaderPath = Join-Path $repoRoot ("tmp\\{0}.curl.headers" -f $name)
             }
             $statusMap[$name] = 'Queued'
             Write-Progress `
@@ -200,6 +315,9 @@ try {
                 if (Test-Path $nextPlan.ErrorPath) {
                     Remove-Item -Path $nextPlan.ErrorPath -Force
                 }
+                if (Test-Path $nextPlan.HeaderPath) {
+                    Remove-Item -Path $nextPlan.HeaderPath -Force
+                }
 
                 $statusMap[$nextPlan.Name] = 'Downloading'
                 $bytesMap[$nextPlan.Name] = 0
@@ -211,6 +329,7 @@ try {
                     '--silent',
                     '--show-error',
                     '--write-out', '%{http_code}|%{size_download}|%{size_upload}',
+                    '--dump-header', $nextPlan.HeaderPath,
                     '--etag-save', $nextPlan.MetaPath,
                     '--output', $nextPlan.ZipPath,
                     $nextPlan.Url
@@ -242,22 +361,53 @@ try {
 
             $completedItems = @($activeJobs | Where-Object { $_.Process.HasExited })
             foreach ($completedItem in $completedItems) {
+                $httpCode = ''
+                $sizeDownload = ''
+                $headers = Get-CurlHeaderMap -HeaderPath $completedItem.Plan.HeaderPath
+                $etag = if ($headers.ContainsKey('etag')) { $headers['etag'] } else { '' }
+                $responseDate = if ($headers.ContainsKey('date')) { $headers['date'] } else { '' }
+                $lastModified = if ($headers.ContainsKey('last-modified')) { $headers['last-modified'] } else { '' }
+                $contentLength = if ($headers.ContainsKey('content-length')) { $headers['content-length'] } else { '' }
+
                 if ($completedItem.Process.ExitCode -eq 0) {
                     $writeOut = ''
                     if (Test-Path $completedItem.Plan.StatusPath) {
                         $writeOut = (Get-Content -Path $completedItem.Plan.StatusPath -Raw).Trim()
                     }
 
-                    $httpCode = ''
                     if ($writeOut) {
-                        $httpCode = $writeOut.Split('|')[0]
+                        $writeOutParts = $writeOut.Split('|')
+                        if ($writeOutParts.Count -ge 1) {
+                            $httpCode = $writeOutParts[0]
+                        }
+                        if ($writeOutParts.Count -ge 2) {
+                            $sizeDownload = $writeOutParts[1]
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($contentLength)) {
+                        $contentLength = $sizeDownload
+                    }
+
+                    $localFileSize = ''
+                    if (Test-Path -Path $completedItem.Plan.ZipPath -PathType Leaf) {
+                        $localFileSize = (Get-Item -Path $completedItem.Plan.ZipPath).Length.ToString()
                     }
 
                     if ($httpCode -eq '304') {
                         $statusMap[$completedItem.Plan.Name] = 'Skipped'
                         $downloadResults += [PSCustomObject]@{
                             Name = $completedItem.Plan.Name
+                            TableName = $completedItem.Plan.TableName
+                            ZipName = "$($completedItem.Plan.Name).zip"
+                            Url = $completedItem.Plan.Url
                             Status = 'Skipped'
+                            HttpStatus = $httpCode
+                            ContentLength = $contentLength
+                            ResponseDate = $responseDate
+                            LastModified = $lastModified
+                            ETag = $etag
+                            LocalFileSize = $localFileSize
                             Error = ''
                         }
                     }
@@ -265,7 +415,16 @@ try {
                         $statusMap[$completedItem.Plan.Name] = 'Completed'
                         $downloadResults += [PSCustomObject]@{
                             Name = $completedItem.Plan.Name
+                            TableName = $completedItem.Plan.TableName
+                            ZipName = "$($completedItem.Plan.Name).zip"
+                            Url = $completedItem.Plan.Url
                             Status = 'Completed'
+                            HttpStatus = $httpCode
+                            ContentLength = $contentLength
+                            ResponseDate = $responseDate
+                            LastModified = $lastModified
+                            ETag = $etag
+                            LocalFileSize = $localFileSize
                             Error = ''
                         }
                     }
@@ -282,7 +441,16 @@ try {
 
                     $downloadResults += [PSCustomObject]@{
                         Name = $completedItem.Plan.Name
+                        TableName = $completedItem.Plan.TableName
+                        ZipName = "$($completedItem.Plan.Name).zip"
+                        Url = $completedItem.Plan.Url
                         Status = 'Failed'
+                        HttpStatus = $httpCode
+                        ContentLength = $contentLength
+                        ResponseDate = $responseDate
+                        LastModified = $lastModified
+                        ETag = $etag
+                        LocalFileSize = ''
                         Error = $curlError
                     }
                 }
@@ -292,6 +460,9 @@ try {
                 }
                 if (Test-Path $completedItem.Plan.ErrorPath) {
                     Remove-Item -Path $completedItem.Plan.ErrorPath -Force
+                }
+                if (Test-Path $completedItem.Plan.HeaderPath) {
+                    Remove-Item -Path $completedItem.Plan.HeaderPath -Force
                 }
             }
 
@@ -402,6 +573,67 @@ try {
             -PercentComplete 100
 
         foreach ($result in $downloadResults) {
+            $insertFetchSql = @"
+INSERT INTO etl.fetch_history
+SELECT
+    COALESCE((SELECT MAX(fetch_id) + 1 FROM etl.fetch_history), 1) AS fetch_id,
+    $Cycle,
+    $(To-SqlStringOrNull -Value $result.TableName),
+    $(To-SqlStringOrNull -Value $result.ZipName),
+    $(To-SqlStringOrNull -Value $result.Url),
+    $(To-SqlStringOrNull -Value $result.Status),
+    $(To-SqlIntOrNull -Value $result.HttpStatus),
+    $(To-SqlBigIntOrNull -Value $result.ContentLength),
+    $(To-SqlStringOrNull -Value $result.ResponseDate),
+    $(To-SqlStringOrNull -Value $result.LastModified),
+    $(To-SqlStringOrNull -Value $result.ETag),
+    $(To-SqlBigIntOrNull -Value $result.LocalFileSize),
+    NOW() AS fetched_at,
+    $(To-SqlStringOrNull -Value $result.Error);
+"@
+
+            duckdb $dbPathResolved -c $insertFetchSql
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Failed writing fetch provenance for $($result.Name).zip"
+                exit 1
+            }
+
+            $upsertCurrentStateSql = @"
+DELETE FROM etl.current_state
+WHERE entity_type = 'file'
+  AND cycle = $Cycle
+  AND entity_name = $(To-SqlStringOrNull -Value $result.ZipName);
+
+INSERT INTO etl.current_state
+SELECT
+    COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1) AS state_id,
+    'file' AS entity_type,
+    $Cycle AS cycle,
+    $(To-SqlStringOrNull -Value $result.TableName) AS table_name,
+    $(To-SqlStringOrNull -Value $result.ZipName) AS entity_name,
+    'fetch' AS last_operation,
+    $(To-SqlStringOrNull -Value $result.Status) AS operation_status,
+    $(To-SqlStringOrNull -Value $result.Url) AS source_url,
+    NULL AS source_zip_path,
+    NULL AS source_entry_name,
+    NULL AS target_table_name,
+    $(To-SqlIntOrNull -Value $result.HttpStatus) AS http_status,
+    $(To-SqlBigIntOrNull -Value $result.ContentLength) AS content_length,
+    NULL AS row_count,
+    NULL AS duration_ms,
+    $(To-SqlStringOrNull -Value $result.ResponseDate) AS response_date,
+    $(To-SqlStringOrNull -Value $result.LastModified) AS last_modified,
+    $(To-SqlStringOrNull -Value $result.ETag) AS etag,
+    $(To-SqlStringOrNull -Value $result.Error) AS error_text,
+    NOW() AS updated_at;
+"@
+
+            duckdb $dbPathResolved -c $upsertCurrentStateSql
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Failed writing current file state for $($result.Name).zip"
+                exit 1
+            }
+
             if ($result.Status -eq 'Completed') {
                 $downloadedCount++
                 Write-Verbose "COMPLETED  $($result.Name).zip"

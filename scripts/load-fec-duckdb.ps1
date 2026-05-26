@@ -124,6 +124,8 @@ foreach ($table in $Tables) {
 
     try {
         $targetTable = "raw_fec.{0}_{1}" -f $table, $Cycle
+        $loadStartedAtUtc = [DateTime]::UtcNow
+        $loadStartedAtUtcSql = $loadStartedAtUtc.ToString('yyyy-MM-dd HH:mm:ss.fff')
         $zipPathSql = $zipPath.Replace("'", "''").Replace('\', '/')
         $zipPathNormalized = $zipPath.Replace('\', '/')
         if ($table -eq 'indiv') {
@@ -186,7 +188,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -246,7 +257,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -311,7 +331,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -383,7 +412,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -455,7 +493,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -529,7 +576,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -609,7 +665,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -702,7 +767,16 @@ FROM read_csv(
     }
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -731,7 +805,16 @@ FROM read_csv_auto(
     sample_size=-1
 );
 
-INSERT INTO etl.load_history
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
 SELECT
     COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
     $Cycle,
@@ -753,12 +836,99 @@ SELECT
             throw "DuckDB load failed for $zipName"
         }
 
+        $loadDurationMs = [int64](([DateTime]::UtcNow - $loadStartedAtUtc).TotalMilliseconds)
+        $stateSql = @"
+DELETE FROM etl.current_state
+WHERE entity_type = 'table'
+  AND cycle = $Cycle
+  AND table_name = '$table';
+
+INSERT INTO etl.current_state
+SELECT
+    COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1) AS state_id,
+    'table' AS entity_type,
+    $Cycle AS cycle,
+    '$table' AS table_name,
+    '$zipName' AS entity_name,
+    'load' AS last_operation,
+    'Completed' AS operation_status,
+    NULL AS source_url,
+    '$zipPathSql' AS source_zip_path,
+    $entryNameHistorySql AS source_entry_name,
+    '$targetTable' AS target_table_name,
+    NULL AS http_status,
+    NULL AS content_length,
+    (SELECT COUNT(*) FROM $targetTable) AS row_count,
+    $loadDurationMs AS duration_ms,
+    NULL AS response_date,
+    NULL AS last_modified,
+    NULL AS etag,
+    NULL AS error_text,
+    NOW() AS updated_at;
+"@
+
+        duckdb $dbPathResolved -c $stateSql
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed writing table current-state for $zipName"
+        }
+
+        $durationUpdateSql = @"
+UPDATE etl.load_history
+SET duration_ms = $loadDurationMs
+WHERE load_id = (
+    SELECT MAX(load_id)
+    FROM etl.load_history
+    WHERE cycle = $Cycle
+      AND table_name = '$table'
+      AND target_table_name = '$targetTable'
+);
+"@
+
+        duckdb $dbPathResolved -c $durationUpdateSql
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed writing load duration for $zipName"
+        }
+
         $loadedCount++
         Write-Host "[$index/$total] Loaded $zipName into $targetTable"
         Write-Verbose "LOADED  $zipName -> $targetTable"
     }
     catch {
         $failedCount++
+        $loadDurationMs = if ($loadStartedAtUtc) { [int64](([DateTime]::UtcNow - $loadStartedAtUtc).TotalMilliseconds) } else { $null }
+        $loadDurationSql = if ($null -eq $loadDurationMs) { 'NULL' } else { $loadDurationMs }
+        $errorTextSql = $_.ToString().Replace("'", "''")
+        $stateFailureSql = @"
+DELETE FROM etl.current_state
+WHERE entity_type = 'table'
+  AND cycle = $Cycle
+  AND table_name = '$table';
+
+INSERT INTO etl.current_state
+SELECT
+    COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1) AS state_id,
+    'table' AS entity_type,
+    $Cycle AS cycle,
+    '$table' AS table_name,
+    '$zipName' AS entity_name,
+    'load' AS last_operation,
+    'Failed' AS operation_status,
+    NULL AS source_url,
+    '$zipPathSql' AS source_zip_path,
+    $entryNameHistorySql AS source_entry_name,
+    '$targetTable' AS target_table_name,
+    NULL AS http_status,
+    NULL AS content_length,
+    NULL AS row_count,
+    $loadDurationSql AS duration_ms,
+    NULL AS response_date,
+    NULL AS last_modified,
+    NULL AS etag,
+    '$errorTextSql' AS error_text,
+    NOW() AS updated_at;
+"@
+
+        duckdb $dbPathResolved -c $stateFailureSql | Out-Null
         Write-Error "Failed loading ${zipName}: $_"
         throw
     }

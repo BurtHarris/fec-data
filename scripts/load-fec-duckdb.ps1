@@ -49,17 +49,6 @@ $defaultTables = @(
     'weball'
 )
 
-$tableEntryMap = @{
-    ccl = 'ccl.txt'
-    cm = 'cm.txt'
-    cn = 'cn.txt'
-    indiv = 'itcont.txt'
-    oth = 'itoth.txt'
-    pas2 = 'itpas2.txt'
-    oppexp = 'oppexp.txt'
-    weball = 'weball.txt'
-}
-
 if (-not $Tables -or $Tables.Count -eq 0) {
     $Tables = $defaultTables
 }
@@ -136,18 +125,24 @@ foreach ($table in $Tables) {
     try {
         $targetTable = "raw_fec.{0}_{1}" -f $table, $Cycle
         $zipPathSql = $zipPath.Replace("'", "''").Replace('\', '/')
-        $entryName = $tableEntryMap[$table]
-        if (-not $entryName) {
-            throw "No ZIP entry mapping configured for table '$table'."
-        }
-        $entryNameSql = $entryName.Replace("'", "''")
-        Write-Verbose "Mapped table '$table' to ZIP entry '$entryName'."
-
         $zipPathNormalized = $zipPath.Replace('\', '/')
-        $sourcePath = "zip://$zipPathNormalized/$entryName"
+        if ($table -eq 'indiv') {
+            $entryName = 'itcont.txt'
+            $sourcePath = "zip://$zipPathNormalized/$entryName"
+            Write-Verbose "Using explicit ZIP entry '$entryName' for indiv."
+        }
+        else {
+            $entryName = $null
+            $sourcePath = "zip://$zipPathNormalized"
+            Write-Verbose "Using bare ZIP archive path for single-file table '$table'."
+        }
         Write-Verbose "Using DuckDB ZIP source path: $sourcePath"
 
         $sourcePathSql = $sourcePath.Replace("'", "''")
+        $entryNameSql = if ($entryName) { $entryName.Replace("'", "''") } else { $null }
+        $entryNameHistorySql = if ([string]::IsNullOrWhiteSpace($entryNameSql)) { 'NULL' } else { "'$entryNameSql'" }
+
+        # Provenance is tracked at load-operation level in etl.load_history.
 
         if ($table -eq 'ccl') {
             $loadSql = @"
@@ -171,10 +166,7 @@ SELECT
     CMTE_ID,
     CMTE_TP,
     CMTE_DSGN,
-    TRY_CAST(NULLIF(TRIM(LINKAGE_ID), '') AS BIGINT) AS LINKAGE_ID,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    TRY_CAST(NULLIF(TRIM(LINKAGE_ID), '') AS BIGINT) AS LINKAGE_ID
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -200,7 +192,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -226,10 +218,7 @@ SELECT
     CMTE_FILING_FREQ,
     ORG_TP,
     CONNECTED_ORG_NM,
-    CAND_ID,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    CAND_ID
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -263,7 +252,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -294,10 +283,7 @@ SELECT
     CAND_ST2,
     CAND_CITY,
     CAND_ST,
-    CAND_ZIP,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    CAND_ZIP
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -331,7 +317,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -363,10 +349,7 @@ SELECT
     TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
     MEMO_CD,
     MEMO_TEXT,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -406,7 +389,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -438,10 +421,7 @@ SELECT
     TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
     MEMO_CD,
     MEMO_TEXT,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -481,7 +461,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -514,10 +494,7 @@ SELECT
     TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
     MEMO_CD,
     MEMO_TEXT,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -558,7 +535,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -594,10 +571,7 @@ SELECT
     TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
     TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
     TRAN_ID,
-    BACK_REF_TRAN_ID,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    BACK_REF_TRAN_ID
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -641,7 +615,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -685,10 +659,7 @@ SELECT
         CAST(TRY_STRPTIME(NULLIF(TRIM(CVG_END_DT), ''), '%m%d%Y') AS DATE)
     ) AS CVG_END_DT,
     TRY_CAST(NULLIF(TRIM(INDIV_REFUNDS), '') AS DECIMAL(14,2)) AS INDIV_REFUNDS,
-    TRY_CAST(NULLIF(TRIM(CMTE_REFUNDS), '') AS DECIMAL(14,2)) AS CMTE_REFUNDS,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    TRY_CAST(NULLIF(TRIM(CMTE_REFUNDS), '') AS DECIMAL(14,2)) AS CMTE_REFUNDS
 FROM read_csv(
     '$sourcePathSql',
     delim='|',
@@ -737,7 +708,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();
@@ -749,10 +720,7 @@ LOAD zipfs;
 DROP TABLE IF EXISTS $targetTable;
 CREATE TABLE $targetTable AS
 SELECT
-    *,
-    '$zipPathSql' AS _source_zip_path,
-    '$entryNameSql' AS _source_entry_name,
-    NOW() AS _loaded_at
+    *
 FROM read_csv_auto(
     '$sourcePathSql',
     delim='|',
@@ -769,7 +737,7 @@ SELECT
     $Cycle,
     '$table',
     '$zipPathSql',
-    '$entryNameSql',
+    $entryNameHistorySql,
     '$targetTable',
     (SELECT COUNT(*) FROM $targetTable),
     NOW();

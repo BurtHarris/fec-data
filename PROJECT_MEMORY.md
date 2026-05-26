@@ -14,3 +14,8 @@ This file captures project-specific lessons learned so they are versioned with t
 - DuckDB ZIP entry reads in this repo require the `zipfs` community extension (`INSTALL zipfs FROM community;` then `LOAD zipfs;`) before using `zip://` URIs.
 - Use canonical zipfs paths with forward slashes: `zip://E:/.../archive.zip/entry.txt`.
 - Keep explicit table-to-entry ZIP mapping (for example, `ccl -> ccl.txt`, `indiv -> itcont.txt`) to avoid ambiguity, especially for multi-file archives like `indiv`.
+
+## Metadata Modeling Decision
+
+- Raw FEC tables are full-refresh payload tables; row-level load metadata columns are intentionally omitted.
+- Load provenance is tracked centrally in `etl.load_history` (one row per table load operation).

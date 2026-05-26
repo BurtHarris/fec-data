@@ -141,6 +141,7 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
   - `001_...sql`, `010_...sql`, `020_...sql`
 - Keep scripts idempotent so reruns are safe.
 - Log all pipeline runs to `logs/`.
+- Track load provenance in `etl.load_history`; keep raw load tables payload-only.
 
 ## Project Memory
 

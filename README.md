@@ -107,7 +107,7 @@ duckdb db/fec.duckdb ".databases"
 curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
 ```
 
-For the existing FEC bulk downloader on Windows PowerShell:
+For the FEC bulk downloader in PowerShell, which caches the raw ZIP artifacts for DuckDB to read directly:
 
 ```powershell
 .\scripts\fetch\fetch_bulk.ps1 2020

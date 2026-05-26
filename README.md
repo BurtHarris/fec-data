@@ -44,9 +44,12 @@ fec-data/
   db/
     fec.duckdb   # Main DuckDB database file (created at runtime)
   scripts/
-    fetch/       # curl download scripts
-    transform/   # preprocessing scripts (PowerShell)
-    load/        # duckdb load scripts and orchestration
+    setup-tools.ps1
+    enable-fec-data-scripts.ps1
+    fetch-bulk.ps1
+    extract-zips.ps1
+    probe-fec-2026.ps1
+    generate-diagram.ps1
   sql/
     schema/      # CREATE TABLE / DDL files
     transform/   # INSERT...SELECT / merge / cleanup SQL
@@ -101,7 +104,7 @@ duckdb db/fec.duckdb ".databases"
 
 2. Add schema SQL files in `sql/schema/`.
 
-3. Add a fetch script in `scripts/fetch/` (example command pattern):
+3. Add a fetch script in `scripts/` (example command pattern):
 
 ```powershell
 curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
@@ -110,8 +113,16 @@ curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/
 For the FEC bulk downloader in PowerShell, which caches the raw ZIP artifacts for DuckDB to read directly:
 
 ```powershell
-.\scripts\fetch\fetch_bulk.ps1 2020
+.\scripts\fetch-bulk.ps1 2020
 ```
+
+To make the repo scripts callable by name from terminal, add the repo `scripts` folder to your PowerShell PATH:
+
+```powershell
+.\scripts\enable-fec-data-scripts.ps1 -Persist
+```
+
+That appends the repo `scripts` directory to your PowerShell profile PATH.
 
 4. Load and transform with DuckDB:
 
@@ -133,6 +144,6 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 
 ## Next Steps
 
-- Add the first source-specific downloader in `scripts/fetch/`.
+- Add the first source-specific downloader in `scripts/`.
 - Define base tables in `sql/schema/`.
 - Add one end-to-end PowerShell run script that calls fetch, then load, then QA checks.

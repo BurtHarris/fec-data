@@ -5,5 +5,8 @@
         "*.csv": "duckdb.dataFileViewer",
         "*.tsv": "duckdb.dataFileViewer",
         "*.xlsx": "duckdb.dataFileViewer"
+    },
+    "terminal.integrated.env.windows": {
+        "PATH": "${workspaceFolder}\\scripts;${env:PATH}"
     }
 }

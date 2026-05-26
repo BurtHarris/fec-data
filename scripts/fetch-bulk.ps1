@@ -1,12 +1,12 @@
 param(
-    [Parameter(Position = 0)]
-    [string]$Cycle
+    [Parameter(Position = 0, HelpMessage = 'Election cycle year (e.g. 2026)')]
+    [string]$Cycle = '2026'
 )
 
 $ErrorActionPreference = 'Stop'
 
 if (-not $Cycle) {
-    Write-Error 'Usage: .\scripts\fetch\fetch_bulk.ps1 <cycle>`n  e.g. .\scripts\fetch\fetch_bulk.ps1 2026'
+    Write-Error 'Usage: .\scripts\fetch-bulk.ps1 <cycle>`n  e.g. .\scripts\fetch-bulk.ps1 2026'
     exit 1
 }
 
@@ -40,7 +40,7 @@ function Save-File {
     Invoke-WebRequest -Uri $Url -OutFile $Destination -MaximumRedirection 10
 }
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $yy = $Cycle.Substring(2)
 $baseUrl = "https://www.fec.gov/files/bulk-downloads/$Cycle"
 $rawDest = Join-Path $repoRoot "data\$Cycle\raw"
@@ -54,11 +54,6 @@ $files = @(
     "oth$yy",
     "cm$yy",
     "cn$yy"
-)
-
-$itcontFiles = @(
-    "itcont_${Cycle}_20200101_20200131.txt",
-    "itcont_${Cycle}_20200201_20200229.txt"
 )
 
 New-Item -ItemType Directory -Path $rawDest -Force | Out-Null
@@ -96,22 +91,6 @@ try {
         Write-Host ''
     }
 
-    foreach ($file in $itcontFiles) {
-        $url = "$baseUrl/by_date/$file"
-        $destinationFile = Join-Path $byDateDest $file
-
-        if (Test-Path $destinationFile) {
-            Write-Host "[SKIP] $file already exists"
-            continue
-        }
-
-        Write-Host "[GET] $file"
-        Save-File -Url $url -Destination $destinationFile
-        Write-Host "[OK] $file downloaded"
-        Write-Host ''
-    }
-
-    Write-Host "All incremental files ready in ${byDateDest}/"
     Get-ChildItem -Path $byDateDest | Select-Object Length, LastWriteTime, Name
 }
 finally {

@@ -37,9 +37,7 @@ data/raw/                  # Downloaded source files — git-ignored, not commit
 data/staging/              # Unpacked/normalized files — git-ignored
 data/processed/            # Curated extracts — git-ignored
 db/                        # DuckDB .duckdb files — git-ignored
-scripts/fetch/             # curl download scripts
-scripts/transform/         # PowerShell preprocessing
-scripts/load/              # DuckDB load/orchestration scripts
+scripts/                   # PowerShell entrypoint scripts
 sql/schema/                # DDL: CREATE TABLE statements
 sql/transform/             # INSERT-SELECT / merge / cleanup SQL
 sql/analysis/              # QA checks and ad hoc queries

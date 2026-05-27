@@ -32,6 +32,29 @@ CREATE TABLE IF NOT EXISTS etl.fetch_history (
     error_text VARCHAR
 );
 
+CREATE TABLE IF NOT EXISTS etl.qa_issue_log (
+    issue_id BIGINT,
+    run_id BIGINT,
+    cycle INTEGER,
+    table_name VARCHAR,
+    issue_type VARCHAR,
+    severity VARCHAR,
+    issue_key VARCHAR,
+    issue_count BIGINT,
+    issue_details VARCHAR,
+    detected_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS etl.qa_run_summary (
+    run_id BIGINT,
+    cycle INTEGER,
+    table_name VARCHAR,
+    metric_name VARCHAR,
+    metric_value DOUBLE,
+    status VARCHAR,
+    computed_at TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS etl.current_state (
     state_id BIGINT,
     entity_type VARCHAR,
@@ -40,6 +63,7 @@ CREATE TABLE IF NOT EXISTS etl.current_state (
     entity_name VARCHAR,
     last_operation VARCHAR,
     operation_status VARCHAR,
+    quality_status VARCHAR,
     source_url VARCHAR,
     source_zip_path VARCHAR,
     source_entry_name VARCHAR,
@@ -54,3 +78,5 @@ CREATE TABLE IF NOT EXISTS etl.current_state (
     error_text VARCHAR,
     updated_at TIMESTAMP
 );
+
+ALTER TABLE etl.current_state ADD COLUMN IF NOT EXISTS quality_status VARCHAR;

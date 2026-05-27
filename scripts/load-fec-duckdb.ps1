@@ -72,9 +72,27 @@ $cycleDir = Join-Path $repoRoot "data\$Cycle"
 $yy = $Cycle.Substring(2)
 $dbPathResolved = if ([System.IO.Path]::IsPathRooted($DbPath)) { $DbPath } else { Join-Path $repoRoot $DbPath }
 $schemaSqlPath = Join-Path $repoRoot 'sql\schema\001_create_fec_schemas.sql'
+$transformDir = Join-Path $repoRoot 'sql\transform'
+
+# ZIP entry names per table — explicit to avoid ambiguity on multi-file archives.
+$entryNameMap = @{
+    'ccl'    = 'ccl.txt'
+    'cm'     = 'cm.txt'
+    'cn'     = 'cn.txt'
+    'indiv'  = 'itcont.txt'  # non-standard: archive entry does not match table name
+    'oppexp' = 'oppexp.txt'
+    'oth'    = 'oth.txt'
+    'pas2'   = 'pas2.txt'
+    'weball' = 'weball.txt'
+}
 
 if (-not (Test-Path -Path $cycleDir -PathType Container)) {
     Write-Error "Cycle directory not found: $cycleDir"
+    exit 1
+}
+
+if (-not (Test-Path -Path $transformDir -PathType Container)) {
+    Write-Error "Transform SQL directory not found: $transformDir"
     exit 1
 }
 
@@ -101,6 +119,443 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+function Get-QaTableProfile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Table
+    )
+
+    switch ($Table) {
+        'ccl' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CAND_ID', 'CAND_ELECTION_YR', 'FEC_ELECTION_YR', 'CMTE_ID', 'CMTE_TP', 'CMTE_DSGN', 'LINKAGE_ID')
+                DuplicateKeyExpr = "CONCAT_WS('|', COALESCE(CAST(CAND_ID AS VARCHAR), ''), COALESCE(CAST(CAND_ELECTION_YR AS VARCHAR), ''), COALESCE(CAST(FEC_ELECTION_YR AS VARCHAR), ''), COALESCE(CMTE_ID, ''), COALESCE(CAST(LINKAGE_ID AS VARCHAR), ''))"
+                DuplicateKeyLabel = 'CAND_ID|CAND_ELECTION_YR|FEC_ELECTION_YR|CMTE_ID|LINKAGE_ID'
+            }
+        }
+        'cm' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CMTE_ID', 'CMTE_NM', 'CMTE_TP')
+                DuplicateKeyExpr = "COALESCE(CMTE_ID, '')"
+                DuplicateKeyLabel = 'CMTE_ID'
+            }
+        }
+        'cn' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CAND_ID', 'CAND_NAME', 'CAND_PTY_AFFILIATION', 'CAND_ELECTION_YR')
+                DuplicateKeyExpr = "COALESCE(CAND_ID, '')"
+                DuplicateKeyLabel = 'CAND_ID'
+            }
+        }
+        'indiv' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CMTE_ID', 'AMNDT_IND', 'RPT_TP', 'ENTITY_TP', 'NAME', 'TRANSACTION_DT', 'TRANSACTION_AMT', 'SUB_ID')
+                DuplicateKeyExpr = "COALESCE(CAST(SUB_ID AS VARCHAR), '')"
+                DuplicateKeyLabel = 'SUB_ID'
+            }
+        }
+        'oth' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CMTE_ID', 'AMNDT_IND', 'RPT_TP', 'ENTITY_TP', 'NAME', 'TRANSACTION_DT', 'TRANSACTION_AMT', 'SUB_ID')
+                DuplicateKeyExpr = "COALESCE(CAST(SUB_ID AS VARCHAR), '')"
+                DuplicateKeyLabel = 'SUB_ID'
+            }
+        }
+        'pas2' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CMTE_ID', 'AMNDT_IND', 'RPT_TP', 'ENTITY_TP', 'NAME', 'TRANSACTION_DT', 'TRANSACTION_AMT', 'SUB_ID', 'CAND_ID')
+                DuplicateKeyExpr = "COALESCE(CAST(SUB_ID AS VARCHAR), '')"
+                DuplicateKeyLabel = 'SUB_ID'
+            }
+        }
+        'oppexp' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CMTE_ID', 'AMNDT_IND', 'RPT_YR', 'RPT_TP', 'NAME', 'TRANSACTION_DT', 'TRANSACTION_AMT', 'SUB_ID')
+                DuplicateKeyExpr = "COALESCE(CAST(SUB_ID AS VARCHAR), '')"
+                DuplicateKeyLabel = 'SUB_ID'
+            }
+        }
+        'weball' {
+            return [PSCustomObject]@{
+                CriticalNullColumns = @('CAND_ID', 'CAND_NAME', 'PTY_CD', 'CAND_PTY_AFFILIATION', 'CVG_END_DT')
+                DuplicateKeyExpr = "COALESCE(CAND_ID, '')"
+                DuplicateKeyLabel = 'CAND_ID'
+            }
+        }
+        default {
+            throw "No QA profile configured for table '$Table'."
+        }
+    }
+}
+
+function Get-NextQaRunId {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DbPath
+    )
+
+    $runIdText = (
+        duckdb -csv $DbPath "SELECT COALESCE(MAX(run_id) + 1, 1) FROM etl.qa_run_summary;" |
+            Select-Object -Last 1
+    ).Trim()
+    if (-not $runIdText) {
+        return [int64]1
+    }
+
+    return [int64]$runIdText
+}
+
+function Invoke-QaSqlTemplate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DbPath,
+        [Parameter(Mandatory = $true)]
+        [string]$TemplatePath,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Replacements
+    )
+
+    $sql = Get-Content -Path $TemplatePath -Raw
+    foreach ($pair in $Replacements.GetEnumerator()) {
+        $sql = $sql.Replace($pair.Key, $pair.Value)
+    }
+
+    duckdb $DbPath -c $sql
+    if ($LASTEXITCODE -ne 0) {
+        throw "QA SQL execution failed for template '$TemplatePath'."
+    }
+}
+
+function Invoke-QaAuditsForTable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DbPath,
+        [Parameter(Mandatory = $true)]
+        [int]$Cycle,
+        [Parameter(Mandatory = $true)]
+        [string]$Table,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetTable
+    )
+
+    $profile = Get-QaTableProfile -Table $Table
+    $runId = Get-NextQaRunId -DbPath $DbPath
+    $qaDir = Join-Path $repoRoot 'sql\qa'
+    $nullMetricsCte = @()
+
+    foreach ($column in $profile.CriticalNullColumns) {
+        $nullMetricsCte += @"
+SELECT
+    $runId AS run_id,
+    $Cycle AS cycle,
+    '$Table' AS table_name,
+    'null_rate' AS metric_name,
+    '$column' AS issue_key,
+    CAST(COUNT(*) AS DOUBLE) AS metric_value,
+    COUNT(*) AS issue_count,
+    CASE WHEN COUNT(*) > 0 THEN 'warn' ELSE 'pass' END AS status,
+    'null_count=' || CAST(COUNT(*) AS VARCHAR) || '; total=' || CAST((SELECT COUNT(*) FROM $TargetTable) AS VARCHAR) AS issue_details,
+    NOW() AS computed_at
+FROM $TargetTable
+WHERE $column IS NULL
+"@
+    }
+
+    Invoke-QaSqlTemplate `
+        -DbPath $DbPath `
+        -TemplatePath (Join-Path $qaDir '01_null_rate_audit.sql') `
+        -Replacements @{
+            '{{RUN_ID}}' = $runId.ToString()
+            '{{CYCLE}}' = $Cycle.ToString()
+            '{{TABLE_NAME}}' = "'$Table'"
+            '{{TARGET_TABLE}}' = $TargetTable
+            '{{NULL_METRICS_QUERY}}' = ($nullMetricsCte -join "`nUNION ALL`n")
+        }
+
+    Invoke-QaSqlTemplate `
+        -DbPath $DbPath `
+        -TemplatePath (Join-Path $qaDir '02_duplicate_key_audit.sql') `
+        -Replacements @{
+            '{{RUN_ID}}' = $runId.ToString()
+            '{{CYCLE}}' = $Cycle.ToString()
+            '{{TABLE_NAME}}' = "'$Table'"
+            '{{TARGET_TABLE}}' = $TargetTable
+            '{{KEY_EXPR}}' = $profile.DuplicateKeyExpr
+            '{{KEY_LABEL}}' = "'$($profile.DuplicateKeyLabel)'"
+        }
+
+    $qualityStatusSql = @"
+UPDATE etl.current_state
+SET quality_status = (
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM etl.qa_issue_log
+            WHERE run_id = $runId
+              AND cycle = $Cycle
+              AND table_name = '$Table'
+              AND issue_count > 0
+        ) THEN 'warn'
+        ELSE 'pass'
+    END
+)
+WHERE entity_type = 'table'
+  AND cycle = $Cycle
+  AND table_name = '$Table';
+"@
+
+    duckdb $DbPath -c $qualityStatusSql
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed updating QA quality status for table '$Table'."
+    }
+}
+
+function Test-DuckDbRawTableExists {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DbPath,
+        [Parameter(Mandatory = $true)]
+        [string]$RawTableName
+    )
+
+        $tableNameOnly = $RawTableName
+        if ($tableNameOnly -like 'raw_fec.*') {
+                $tableNameOnly = $tableNameOnly.Substring(8)
+        }
+
+        $existsText = (
+        duckdb -csv $DbPath @"
+SELECT COUNT(*)
+FROM information_schema.tables
+WHERE table_schema = 'raw_fec'
+    AND table_name = '$tableNameOnly';
+"@ |
+            Select-Object -Last 1
+    ).Trim()
+
+    return ([int64]$existsText -gt 0)
+}
+
+function Get-QaCrossTableProfile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Table
+    )
+
+    $currentYear = [int]$Cycle
+
+    switch ($Table) {
+        'ccl' {
+            return [PSCustomObject]@{
+                ReferentialChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CAND_ID->cn'; IssueDetails = 'candidate missing from cn'; JoinColumn = 'CAND_ID'; RefTable = "raw_fec.cn_$Cycle"; RefColumn = 'CAND_ID' },
+                    [PSCustomObject]@{ IssueKey = 'CMTE_ID->cm'; IssueDetails = 'committee missing from cm'; JoinColumn = 'CMTE_ID'; RefTable = "raw_fec.cm_$Cycle"; RefColumn = 'CMTE_ID' }
+                )
+                DomainChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CAND_ELECTION_YR_range'; IssueDetails = 'candidate election year out of range'; Condition = "CAND_ELECTION_YR IS NOT NULL AND (CAND_ELECTION_YR < 1900 OR CAND_ELECTION_YR > 2100)" }
+                )
+            }
+        }
+        'indiv' {
+            return [PSCustomObject]@{
+                ReferentialChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CMTE_ID->cm'; IssueDetails = 'committee missing from cm'; JoinColumn = 'CMTE_ID'; RefTable = "raw_fec.cm_$Cycle"; RefColumn = 'CMTE_ID' }
+                )
+                DomainChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_DT_future'; IssueDetails = 'transaction date is in the future'; Condition = "TRANSACTION_DT IS NOT NULL AND TRANSACTION_DT > CURRENT_DATE" },
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_AMT_negative'; IssueDetails = 'transaction amount is negative'; Condition = "TRANSACTION_AMT IS NOT NULL AND TRANSACTION_AMT < 0" }
+                )
+            }
+        }
+        'oth' {
+            return [PSCustomObject]@{
+                ReferentialChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CMTE_ID->cm'; IssueDetails = 'committee missing from cm'; JoinColumn = 'CMTE_ID'; RefTable = "raw_fec.cm_$Cycle"; RefColumn = 'CMTE_ID' }
+                )
+                DomainChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_DT_future'; IssueDetails = 'transaction date is in the future'; Condition = "TRANSACTION_DT IS NOT NULL AND TRANSACTION_DT > CURRENT_DATE" },
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_AMT_negative'; IssueDetails = 'transaction amount is negative'; Condition = "TRANSACTION_AMT IS NOT NULL AND TRANSACTION_AMT < 0" }
+                )
+            }
+        }
+        'pas2' {
+            return [PSCustomObject]@{
+                ReferentialChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CMTE_ID->cm'; IssueDetails = 'committee missing from cm'; JoinColumn = 'CMTE_ID'; RefTable = "raw_fec.cm_$Cycle"; RefColumn = 'CMTE_ID' },
+                    [PSCustomObject]@{ IssueKey = 'CAND_ID->cn'; IssueDetails = 'candidate missing from cn'; JoinColumn = 'CAND_ID'; RefTable = "raw_fec.cn_$Cycle"; RefColumn = 'CAND_ID' }
+                )
+                DomainChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_DT_future'; IssueDetails = 'transaction date is in the future'; Condition = "TRANSACTION_DT IS NOT NULL AND TRANSACTION_DT > CURRENT_DATE" },
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_AMT_negative'; IssueDetails = 'transaction amount is negative'; Condition = "TRANSACTION_AMT IS NOT NULL AND TRANSACTION_AMT < 0" }
+                )
+            }
+        }
+        'oppexp' {
+            return [PSCustomObject]@{
+                ReferentialChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CMTE_ID->cm'; IssueDetails = 'committee missing from cm'; JoinColumn = 'CMTE_ID'; RefTable = "raw_fec.cm_$Cycle"; RefColumn = 'CMTE_ID' }
+                )
+                DomainChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'RPT_YR_range'; IssueDetails = 'report year out of range'; Condition = "RPT_YR IS NOT NULL AND (RPT_YR < 1900 OR RPT_YR > $currentYear + 1)" },
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_DT_future'; IssueDetails = 'transaction date is in the future'; Condition = "TRANSACTION_DT IS NOT NULL AND TRANSACTION_DT > CURRENT_DATE" },
+                    [PSCustomObject]@{ IssueKey = 'TRANSACTION_AMT_negative'; IssueDetails = 'transaction amount is negative'; Condition = "TRANSACTION_AMT IS NOT NULL AND TRANSACTION_AMT < 0" }
+                )
+            }
+        }
+        'weball' {
+            return [PSCustomObject]@{
+                ReferentialChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CAND_ID->cn'; IssueDetails = 'candidate missing from cn'; JoinColumn = 'CAND_ID'; RefTable = "raw_fec.cn_$Cycle"; RefColumn = 'CAND_ID' }
+                )
+                DomainChecks = @(
+                    [PSCustomObject]@{ IssueKey = 'CVG_END_DT_future'; IssueDetails = 'coverage end date is in the future'; Condition = "CVG_END_DT IS NOT NULL AND CVG_END_DT > CURRENT_DATE" },
+                    [PSCustomObject]@{ IssueKey = 'GEN_ELECTION_PRECENT_range'; IssueDetails = 'general election percent is out of range'; Condition = "GEN_ELECTION_PRECENT IS NOT NULL AND (GEN_ELECTION_PRECENT < 0 OR GEN_ELECTION_PRECENT > 1)" }
+                )
+            }
+        }
+        default {
+            return [PSCustomObject]@{
+                ReferentialChecks = @()
+                DomainChecks = @()
+            }
+        }
+    }
+}
+
+function Get-QaMetricQueries {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Table,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetTable,
+        [Parameter(Mandatory = $true)]
+        [int]$RunId,
+        [Parameter(Mandatory = $true)]
+        [string]$MetricName,
+        [Parameter(Mandatory = $true)]
+        [string]$IssueType,
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IEnumerable]$Checks
+    )
+
+    $queries = @()
+    foreach ($check in $Checks) {
+        if (-not (Test-DuckDbRawTableExists -DbPath $dbPathResolved -RawTableName $check.RefTable.Split('.')[1])) {
+            continue
+        }
+
+        $queries += @"
+SELECT
+    $RunId AS run_id,
+    $Cycle AS cycle,
+    '$Table' AS table_name,
+    '$MetricName' AS metric_name,
+    '$($check.IssueKey)' AS issue_key,
+    CAST(COUNT(*) AS DOUBLE) AS metric_value,
+    COUNT(*) AS issue_count,
+    CASE WHEN COUNT(*) > 0 THEN 'warn' ELSE 'pass' END AS status,
+    '$($check.IssueDetails)' || '; ref_table=' || '$($check.RefTable)' AS issue_details,
+    NOW() AS computed_at
+FROM $TargetTable t
+LEFT JOIN $($check.RefTable) r
+    ON t.$($check.JoinColumn) = r.$($check.RefColumn)
+WHERE t.$($check.JoinColumn) IS NOT NULL
+  AND r.$($check.RefColumn) IS NULL
+"@
+    }
+
+    return ($queries -join "`nUNION ALL`n")
+}
+
+function Invoke-QaCrossTableAuditsForTable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DbPath,
+        [Parameter(Mandatory = $true)]
+        [int]$Cycle,
+        [Parameter(Mandatory = $true)]
+        [string]$Table,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetTable
+    )
+
+    $profile = Get-QaCrossTableProfile -Table $Table
+    $runId = Get-NextQaRunId -DbPath $DbPath
+    $qaDir = Join-Path $repoRoot 'sql\qa'
+
+    $referentialQueries = Get-QaMetricQueries -Table $Table -TargetTable $TargetTable -RunId $runId -MetricName 'referential_orphan' -IssueType 'referential_orphan' -Checks $profile.ReferentialChecks
+    if ($referentialQueries) {
+        Invoke-QaSqlTemplate `
+            -DbPath $DbPath `
+            -TemplatePath (Join-Path $qaDir '03_referential_orphan_audit.sql') `
+            -Replacements @{
+                '{{RUN_ID}}' = $runId.ToString()
+                '{{CYCLE}}' = $Cycle.ToString()
+                '{{TABLE_NAME}}' = "'$Table'"
+                '{{TARGET_TABLE}}' = $TargetTable
+                '{{REFERENTIAL_METRICS_QUERY}}' = $referentialQueries
+            }
+    }
+
+    $domainQueries = @()
+    foreach ($check in $profile.DomainChecks) {
+        $domainQueries += @"
+SELECT
+    $runId AS run_id,
+    $Cycle AS cycle,
+    '$Table' AS table_name,
+    'domain_violation' AS metric_name,
+    '$($check.IssueKey)' AS issue_key,
+    CAST(COUNT(*) AS DOUBLE) AS metric_value,
+    COUNT(*) AS issue_count,
+    CASE WHEN COUNT(*) > 0 THEN 'warn' ELSE 'pass' END AS status,
+    '$($check.IssueDetails)' AS issue_details,
+    NOW() AS computed_at
+FROM $TargetTable
+WHERE $($check.Condition)
+"@
+    }
+
+    if ($domainQueries) {
+        Invoke-QaSqlTemplate `
+            -DbPath $DbPath `
+            -TemplatePath (Join-Path $qaDir '04_amount_date_domain_audit.sql') `
+            -Replacements @{
+                '{{RUN_ID}}' = $runId.ToString()
+                '{{CYCLE}}' = $Cycle.ToString()
+                '{{TABLE_NAME}}' = "'$Table'"
+                '{{TARGET_TABLE}}' = $TargetTable
+                '{{DOMAIN_METRICS_QUERY}}' = ($domainQueries -join "`nUNION ALL`n")
+            }
+    }
+
+    if ($referentialQueries -or $domainQueries) {
+        $qualityStatusSql = @"
+UPDATE etl.current_state
+SET quality_status = (
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM etl.qa_issue_log
+            WHERE cycle = $Cycle
+              AND table_name = '$Table'
+              AND issue_count > 0
+        ) THEN 'warn'
+        ELSE 'pass'
+    END
+)
+WHERE entity_type = 'table'
+  AND cycle = $Cycle
+  AND table_name = '$Table';
+"@
+
+        duckdb $DbPath -c $qualityStatusSql
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed updating cross-table QA quality status for table '$Table'."
+        }
+    }
+}
+
 $loadedCount = 0
 $skippedCount = 0
 $failedCount = 0
@@ -125,714 +580,29 @@ foreach ($table in $Tables) {
     try {
         $targetTable = "raw_fec.{0}_{1}" -f $table, $Cycle
         $loadStartedAtUtc = [DateTime]::UtcNow
-        $loadStartedAtUtcSql = $loadStartedAtUtc.ToString('yyyy-MM-dd HH:mm:ss.fff')
         $zipPathSql = $zipPath.Replace("'", "''").Replace('\', '/')
         $zipPathNormalized = $zipPath.Replace('\', '/')
-        if ($table -eq 'indiv') {
-            $entryName = 'itcont.txt'
-            $sourcePath = "zip://$zipPathNormalized/$entryName"
-            Write-Verbose "Using explicit ZIP entry '$entryName' for indiv."
-        }
-        else {
-            $entryName = $null
-            $sourcePath = "zip://$zipPathNormalized"
-            Write-Verbose "Using bare ZIP archive path for single-file table '$table'."
-        }
+        $entryName = $entryNameMap[$table]
+        $sourcePath = "zip://$zipPathNormalized/$entryName"
+        $sourcePathSql = $sourcePath.Replace("'", "''")
+        $entryNameHistorySql = "'$($entryName.Replace("'", "''"))'"
         Write-Verbose "Using DuckDB ZIP source path: $sourcePath"
 
-        $sourcePathSql = $sourcePath.Replace("'", "''")
-        $entryNameSql = if ($entryName) { $entryName.Replace("'", "''") } else { $null }
-        $entryNameHistorySql = if ([string]::IsNullOrWhiteSpace($entryNameSql)) { 'NULL' } else { "'$entryNameSql'" }
-
-        # Provenance is tracked at load-operation level in etl.load_history.
-
-        if ($table -eq 'ccl') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CAND_ID,
-    TRY_CAST(
-        CASE
-            WHEN LENGTH(TRIM(CAND_ELECTION_YR)) = 4 THEN TRIM(CAND_ELECTION_YR)
-            ELSE NULL
-        END AS SMALLINT
-    ) AS CAND_ELECTION_YR,
-    TRY_CAST(
-        CASE
-            WHEN LENGTH(TRIM(FEC_ELECTION_YR)) = 4 THEN TRIM(FEC_ELECTION_YR)
-            ELSE NULL
-        END AS SMALLINT
-    ) AS FEC_ELECTION_YR,
-    CMTE_ID,
-    CMTE_TP,
-    CMTE_DSGN,
-    TRY_CAST(NULLIF(TRIM(LINKAGE_ID), '') AS BIGINT) AS LINKAGE_ID
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CAND_ID':'VARCHAR',
-        'CAND_ELECTION_YR':'VARCHAR',
-        'FEC_ELECTION_YR':'VARCHAR',
-        'CMTE_ID':'VARCHAR',
-        'CMTE_TP':'VARCHAR',
-        'CMTE_DSGN':'VARCHAR',
-        'LINKAGE_ID':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
+        # Load the per-table SQL template and substitute runtime tokens.
+        $sqlFilePath = Join-Path $transformDir "load_$table.sql"
+        if (-not (Test-Path -Path $sqlFilePath -PathType Leaf)) {
+            throw "Load SQL template not found: $sqlFilePath"
         }
-        elseif ($table -eq 'cm') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CMTE_ID,
-    CMTE_NM,
-    TRES_NM,
-    CMTE_ST1,
-    CMTE_ST2,
-    CMTE_CITY,
-    CMTE_ST,
-    CMTE_ZIP,
-    CMTE_DSGN,
-    CMTE_TP,
-    CMTE_PTY_AFFILIATION,
-    CMTE_FILING_FREQ,
-    ORG_TP,
-    CONNECTED_ORG_NM,
-    CAND_ID
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CMTE_ID':'VARCHAR',
-        'CMTE_NM':'VARCHAR',
-        'TRES_NM':'VARCHAR',
-        'CMTE_ST1':'VARCHAR',
-        'CMTE_ST2':'VARCHAR',
-        'CMTE_CITY':'VARCHAR',
-        'CMTE_ST':'VARCHAR',
-        'CMTE_ZIP':'VARCHAR',
-        'CMTE_DSGN':'VARCHAR',
-        'CMTE_TP':'VARCHAR',
-        'CMTE_PTY_AFFILIATION':'VARCHAR',
-        'CMTE_FILING_FREQ':'VARCHAR',
-        'ORG_TP':'VARCHAR',
-        'CONNECTED_ORG_NM':'VARCHAR',
-        'CAND_ID':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
-        elseif ($table -eq 'cn') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CAND_ID,
-    CAND_NAME,
-    CAND_PTY_AFFILIATION,
-    TRY_CAST(
-        CASE
-            WHEN LENGTH(TRIM(CAND_ELECTION_YR)) = 4 THEN TRIM(CAND_ELECTION_YR)
-            ELSE NULL
-        END AS SMALLINT
-    ) AS CAND_ELECTION_YR,
-    CAND_OFFICE_ST,
-    CAND_OFFICE,
-    CAND_OFFICE_DISTRICT,
-    CAND_ICI,
-    CAND_STATUS,
-    CAND_PCC,
-    CAND_ST1,
-    CAND_ST2,
-    CAND_CITY,
-    CAND_ST,
-    CAND_ZIP
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CAND_ID':'VARCHAR',
-        'CAND_NAME':'VARCHAR',
-        'CAND_PTY_AFFILIATION':'VARCHAR',
-        'CAND_ELECTION_YR':'VARCHAR',
-        'CAND_OFFICE_ST':'VARCHAR',
-        'CAND_OFFICE':'VARCHAR',
-        'CAND_OFFICE_DISTRICT':'VARCHAR',
-        'CAND_ICI':'VARCHAR',
-        'CAND_STATUS':'VARCHAR',
-        'CAND_PCC':'VARCHAR',
-        'CAND_ST1':'VARCHAR',
-        'CAND_ST2':'VARCHAR',
-        'CAND_CITY':'VARCHAR',
-        'CAND_ST':'VARCHAR',
-        'CAND_ZIP':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
-        elseif ($table -eq 'indiv') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CMTE_ID,
-    AMNDT_IND,
-    RPT_TP,
-    TRANSACTION_PGI,
-    IMAGE_NUM,
-    TRANSACTION_TP,
-    ENTITY_TP,
-    NAME,
-    CITY,
-    STATE,
-    ZIP_CODE,
-    EMPLOYER,
-    OCCUPATION,
-    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
-    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
-    OTHER_ID,
-    TRAN_ID,
-    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
-    MEMO_CD,
-    MEMO_TEXT,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CMTE_ID':'VARCHAR',
-        'AMNDT_IND':'VARCHAR',
-        'RPT_TP':'VARCHAR',
-        'TRANSACTION_PGI':'VARCHAR',
-        'IMAGE_NUM':'VARCHAR',
-        'TRANSACTION_TP':'VARCHAR',
-        'ENTITY_TP':'VARCHAR',
-        'NAME':'VARCHAR',
-        'CITY':'VARCHAR',
-        'STATE':'VARCHAR',
-        'ZIP_CODE':'VARCHAR',
-        'EMPLOYER':'VARCHAR',
-        'OCCUPATION':'VARCHAR',
-        'TRANSACTION_DT':'VARCHAR',
-        'TRANSACTION_AMT':'VARCHAR',
-        'OTHER_ID':'VARCHAR',
-        'TRAN_ID':'VARCHAR',
-        'FILE_NUM':'VARCHAR',
-        'MEMO_CD':'VARCHAR',
-        'MEMO_TEXT':'VARCHAR',
-        'SUB_ID':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
-        elseif ($table -eq 'oth') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CMTE_ID,
-    AMNDT_IND,
-    RPT_TP,
-    TRANSACTION_PGI,
-    IMAGE_NUM,
-    TRANSACTION_TP,
-    ENTITY_TP,
-    NAME,
-    CITY,
-    STATE,
-    ZIP_CODE,
-    EMPLOYER,
-    OCCUPATION,
-    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
-    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
-    OTHER_ID,
-    TRAN_ID,
-    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
-    MEMO_CD,
-    MEMO_TEXT,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CMTE_ID':'VARCHAR',
-        'AMNDT_IND':'VARCHAR',
-        'RPT_TP':'VARCHAR',
-        'TRANSACTION_PGI':'VARCHAR',
-        'IMAGE_NUM':'VARCHAR',
-        'TRANSACTION_TP':'VARCHAR',
-        'ENTITY_TP':'VARCHAR',
-        'NAME':'VARCHAR',
-        'CITY':'VARCHAR',
-        'STATE':'VARCHAR',
-        'ZIP_CODE':'VARCHAR',
-        'EMPLOYER':'VARCHAR',
-        'OCCUPATION':'VARCHAR',
-        'TRANSACTION_DT':'VARCHAR',
-        'TRANSACTION_AMT':'VARCHAR',
-        'OTHER_ID':'VARCHAR',
-        'TRAN_ID':'VARCHAR',
-        'FILE_NUM':'VARCHAR',
-        'MEMO_CD':'VARCHAR',
-        'MEMO_TEXT':'VARCHAR',
-        'SUB_ID':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
-        elseif ($table -eq 'pas2') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CMTE_ID,
-    AMNDT_IND,
-    RPT_TP,
-    TRANSACTION_PGI,
-    IMAGE_NUM,
-    TRANSACTION_TP,
-    ENTITY_TP,
-    NAME,
-    CITY,
-    STATE,
-    ZIP_CODE,
-    EMPLOYER,
-    OCCUPATION,
-    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
-    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
-    OTHER_ID,
-    CAND_ID,
-    TRAN_ID,
-    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
-    MEMO_CD,
-    MEMO_TEXT,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CMTE_ID':'VARCHAR',
-        'AMNDT_IND':'VARCHAR',
-        'RPT_TP':'VARCHAR',
-        'TRANSACTION_PGI':'VARCHAR',
-        'IMAGE_NUM':'VARCHAR',
-        'TRANSACTION_TP':'VARCHAR',
-        'ENTITY_TP':'VARCHAR',
-        'NAME':'VARCHAR',
-        'CITY':'VARCHAR',
-        'STATE':'VARCHAR',
-        'ZIP_CODE':'VARCHAR',
-        'EMPLOYER':'VARCHAR',
-        'OCCUPATION':'VARCHAR',
-        'TRANSACTION_DT':'VARCHAR',
-        'TRANSACTION_AMT':'VARCHAR',
-        'OTHER_ID':'VARCHAR',
-        'CAND_ID':'VARCHAR',
-        'TRAN_ID':'VARCHAR',
-        'FILE_NUM':'VARCHAR',
-        'MEMO_CD':'VARCHAR',
-        'MEMO_TEXT':'VARCHAR',
-        'SUB_ID':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
-        elseif ($table -eq 'oppexp') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CMTE_ID,
-    AMNDT_IND,
-    TRY_CAST(NULLIF(TRIM(RPT_YR), '') AS SMALLINT) AS RPT_YR,
-    RPT_TP,
-    IMAGE_NUM,
-    LINE_NUM,
-    FORM_TP_CD,
-    SCHED_TP_CD,
-    NAME,
-    CITY,
-    STATE,
-    ZIP_CODE,
-    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
-    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
-    TRANSACTION_PGI,
-    PURPOSE,
-    CATEGORY,
-    CATEGORY_DESC,
-    MEMO_CD,
-    MEMO_TEXT,
-    ENTITY_TP,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
-    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
-    TRAN_ID,
-    BACK_REF_TRAN_ID
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CMTE_ID':'VARCHAR',
-        'AMNDT_IND':'VARCHAR',
-        'RPT_YR':'VARCHAR',
-        'RPT_TP':'VARCHAR',
-        'IMAGE_NUM':'VARCHAR',
-        'LINE_NUM':'VARCHAR',
-        'FORM_TP_CD':'VARCHAR',
-        'SCHED_TP_CD':'VARCHAR',
-        'NAME':'VARCHAR',
-        'CITY':'VARCHAR',
-        'STATE':'VARCHAR',
-        'ZIP_CODE':'VARCHAR',
-        'TRANSACTION_DT':'VARCHAR',
-        'TRANSACTION_AMT':'VARCHAR',
-        'TRANSACTION_PGI':'VARCHAR',
-        'PURPOSE':'VARCHAR',
-        'CATEGORY':'VARCHAR',
-        'CATEGORY_DESC':'VARCHAR',
-        'MEMO_CD':'VARCHAR',
-        'MEMO_TEXT':'VARCHAR',
-        'ENTITY_TP':'VARCHAR',
-        'SUB_ID':'VARCHAR',
-        'FILE_NUM':'VARCHAR',
-        'TRAN_ID':'VARCHAR',
-        'BACK_REF_TRAN_ID':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
-        elseif ($table -eq 'weball') {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    CAND_ID,
-    CAND_NAME,
-    CAND_ICI,
-    PTY_CD,
-    CAND_PTY_AFFILIATION,
-    TRY_CAST(NULLIF(TRIM(TTL_RECEIPTS), '') AS DECIMAL(14,2)) AS TTL_RECEIPTS,
-    TRY_CAST(NULLIF(TRIM(TRANS_FROM_AUTH), '') AS DECIMAL(14,2)) AS TRANS_FROM_AUTH,
-    TRY_CAST(NULLIF(TRIM(TTL_DISB), '') AS DECIMAL(14,2)) AS TTL_DISB,
-    TRY_CAST(NULLIF(TRIM(TRANS_TO_AUTH), '') AS DECIMAL(14,2)) AS TRANS_TO_AUTH,
-    TRY_CAST(NULLIF(TRIM(COH_BOP), '') AS DECIMAL(14,2)) AS COH_BOP,
-    TRY_CAST(NULLIF(TRIM(COH_COP), '') AS DECIMAL(14,2)) AS COH_COP,
-    TRY_CAST(NULLIF(TRIM(CAND_CONTRIB), '') AS DECIMAL(14,2)) AS CAND_CONTRIB,
-    TRY_CAST(NULLIF(TRIM(CAND_LOANS), '') AS DECIMAL(14,2)) AS CAND_LOANS,
-    TRY_CAST(NULLIF(TRIM(OTHER_LOANS), '') AS DECIMAL(14,2)) AS OTHER_LOANS,
-    TRY_CAST(NULLIF(TRIM(CAND_LOAN_REPAY), '') AS DECIMAL(14,2)) AS CAND_LOAN_REPAY,
-    TRY_CAST(NULLIF(TRIM(OTHER_LOAN_REPAY), '') AS DECIMAL(14,2)) AS OTHER_LOAN_REPAY,
-    TRY_CAST(NULLIF(TRIM(DEBTS_OWED_BY), '') AS DECIMAL(14,2)) AS DEBTS_OWED_BY,
-    TRY_CAST(NULLIF(TRIM(TTL_INDIV_CONTRIB), '') AS DECIMAL(14,2)) AS TTL_INDIV_CONTRIB,
-    CAND_OFFICE_ST,
-    CAND_OFFICE_DISTRICT,
-    SPEC_ELECTION,
-    PRIM_ELECTION,
-    RUN_ELECTION,
-    GEN_ELECTION,
-    TRY_CAST(NULLIF(TRIM(GEN_ELECTION_PRECENT), '') AS DECIMAL(7,4)) AS GEN_ELECTION_PRECENT,
-    TRY_CAST(NULLIF(TRIM(OTHER_POL_CMTE_CONTRIB), '') AS DECIMAL(14,2)) AS OTHER_POL_CMTE_CONTRIB,
-    TRY_CAST(NULLIF(TRIM(POL_PTY_CONTRIB), '') AS DECIMAL(14,2)) AS POL_PTY_CONTRIB,
-    COALESCE(
-        CAST(TRY_STRPTIME(NULLIF(TRIM(CVG_END_DT), ''), '%m/%d/%Y') AS DATE),
-        CAST(TRY_STRPTIME(NULLIF(TRIM(CVG_END_DT), ''), '%m%d%Y') AS DATE)
-    ) AS CVG_END_DT,
-    TRY_CAST(NULLIF(TRIM(INDIV_REFUNDS), '') AS DECIMAL(14,2)) AS INDIV_REFUNDS,
-    TRY_CAST(NULLIF(TRIM(CMTE_REFUNDS), '') AS DECIMAL(14,2)) AS CMTE_REFUNDS
-FROM read_csv(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CAND_ID':'VARCHAR',
-        'CAND_NAME':'VARCHAR',
-        'CAND_ICI':'VARCHAR',
-        'PTY_CD':'VARCHAR',
-        'CAND_PTY_AFFILIATION':'VARCHAR',
-        'TTL_RECEIPTS':'VARCHAR',
-        'TRANS_FROM_AUTH':'VARCHAR',
-        'TTL_DISB':'VARCHAR',
-        'TRANS_TO_AUTH':'VARCHAR',
-        'COH_BOP':'VARCHAR',
-        'COH_COP':'VARCHAR',
-        'CAND_CONTRIB':'VARCHAR',
-        'CAND_LOANS':'VARCHAR',
-        'OTHER_LOANS':'VARCHAR',
-        'CAND_LOAN_REPAY':'VARCHAR',
-        'OTHER_LOAN_REPAY':'VARCHAR',
-        'DEBTS_OWED_BY':'VARCHAR',
-        'TTL_INDIV_CONTRIB':'VARCHAR',
-        'CAND_OFFICE_ST':'VARCHAR',
-        'CAND_OFFICE_DISTRICT':'VARCHAR',
-        'SPEC_ELECTION':'VARCHAR',
-        'PRIM_ELECTION':'VARCHAR',
-        'RUN_ELECTION':'VARCHAR',
-        'GEN_ELECTION':'VARCHAR',
-        'GEN_ELECTION_PRECENT':'VARCHAR',
-        'OTHER_POL_CMTE_CONTRIB':'VARCHAR',
-        'POL_PTY_CONTRIB':'VARCHAR',
-        'CVG_END_DT':'VARCHAR',
-        'INDIV_REFUNDS':'VARCHAR',
-        'CMTE_REFUNDS':'VARCHAR'
-    }
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
-        else {
-            $loadSql = @"
-LOAD zipfs;
-DROP TABLE IF EXISTS $targetTable;
-CREATE TABLE $targetTable AS
-SELECT
-    *
-FROM read_csv_auto(
-    '$sourcePathSql',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1
-);
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1) AS load_id,
-    $Cycle,
-    '$table',
-    '$zipPathSql',
-    $entryNameHistorySql,
-    '$targetTable',
-    (SELECT COUNT(*) FROM $targetTable),
-    NOW();
-"@
-        }
+        $loadSql = (Get-Content -Path $sqlFilePath -Raw) `
+            -replace '\{TARGET_TABLE\}', $targetTable `
+            -replace '\{SOURCE_PATH\}', $sourcePathSql `
+            -replace '\{CYCLE\}', $Cycle `
+            -replace '\{TABLE_NAME\}', $table `
+            -replace '\{ZIP_PATH\}', $zipPathSql `
+            -replace '\{ENTRY_NAME_SQL\}', $entryNameHistorySql
 
         duckdb $dbPathResolved -c $loadSql
         if ($LASTEXITCODE -ne 0) {
-            if ($table -eq 'indiv') {
-                throw "DuckDB load failed for $zipName. This archive may contain multiple files; use extraction or explicit-entry handling for indiv."
-            }
-
             throw "DuckDB load failed for $zipName"
         }
 
@@ -843,7 +613,29 @@ WHERE entity_type = 'table'
   AND cycle = $Cycle
   AND table_name = '$table';
 
-INSERT INTO etl.current_state
+INSERT INTO etl.current_state (
+    state_id,
+    entity_type,
+    cycle,
+    table_name,
+    entity_name,
+    last_operation,
+    operation_status,
+    quality_status,
+    source_url,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    http_status,
+    content_length,
+    row_count,
+    duration_ms,
+    response_date,
+    last_modified,
+    etag,
+    error_text,
+    updated_at
+)
 SELECT
     COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1) AS state_id,
     'table' AS entity_type,
@@ -852,6 +644,7 @@ SELECT
     '$zipName' AS entity_name,
     'load' AS last_operation,
     'Completed' AS operation_status,
+    'pass' AS quality_status,
     NULL AS source_url,
     '$zipPathSql' AS source_zip_path,
     $entryNameHistorySql AS source_entry_name,
@@ -889,6 +682,8 @@ WHERE load_id = (
             throw "Failed writing load duration for $zipName"
         }
 
+        Invoke-QaAuditsForTable -DbPath $dbPathResolved -Cycle $Cycle -Table $table -TargetTable $targetTable
+
         $loadedCount++
         Write-Host "[$index/$total] Loaded $zipName into $targetTable"
         Write-Verbose "LOADED  $zipName -> $targetTable"
@@ -904,7 +699,29 @@ WHERE entity_type = 'table'
   AND cycle = $Cycle
   AND table_name = '$table';
 
-INSERT INTO etl.current_state
+INSERT INTO etl.current_state (
+    state_id,
+    entity_type,
+    cycle,
+    table_name,
+    entity_name,
+    last_operation,
+    operation_status,
+    quality_status,
+    source_url,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    http_status,
+    content_length,
+    row_count,
+    duration_ms,
+    response_date,
+    last_modified,
+    etag,
+    error_text,
+    updated_at
+)
 SELECT
     COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1) AS state_id,
     'table' AS entity_type,
@@ -913,6 +730,7 @@ SELECT
     '$zipName' AS entity_name,
     'load' AS last_operation,
     'Failed' AS operation_status,
+    'error' AS quality_status,
     NULL AS source_url,
     '$zipPathSql' AS source_zip_path,
     $entryNameHistorySql AS source_entry_name,
@@ -931,6 +749,13 @@ SELECT
         duckdb $dbPathResolved -c $stateFailureSql | Out-Null
         Write-Error "Failed loading ${zipName}: $_"
         throw
+    }
+}
+
+foreach ($table in $Tables) {
+    $targetTable = "raw_fec.{0}_{1}" -f $table, $Cycle
+    if (Test-DuckDbRawTableExists -DbPath $dbPathResolved -RawTableName $targetTable) {
+        Invoke-QaCrossTableAuditsForTable -DbPath $dbPathResolved -Cycle $Cycle -Table $table -TargetTable $targetTable
     }
 }
 

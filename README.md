@@ -53,7 +53,7 @@ fec-data/
   sql/
     schema/      # CREATE TABLE / DDL files
     transform/   # INSERT...SELECT / merge / cleanup SQL
-    analysis/    # QA checks and ad hoc queries
+    qa/          # QA checks and ad hoc queries
   logs/          # ETL run logs
   tmp/           # Temporary work artifacts
 ```

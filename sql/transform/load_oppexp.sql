@@ -1,0 +1,85 @@
+LOAD zipfs;
+DROP TABLE IF EXISTS {TARGET_TABLE};
+CREATE TABLE {TARGET_TABLE} AS
+SELECT
+    CMTE_ID,
+    AMNDT_IND,
+    TRY_CAST(NULLIF(TRIM(RPT_YR), '') AS SMALLINT) AS RPT_YR,
+    RPT_TP,
+    IMAGE_NUM,
+    LINE_NUM,
+    FORM_TP_CD,
+    SCHED_TP_CD,
+    NAME,
+    CITY,
+    STATE,
+    ZIP_CODE,
+    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
+    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
+    TRANSACTION_PGI,
+    PURPOSE,
+    CATEGORY,
+    CATEGORY_DESC,
+    MEMO_CD,
+    MEMO_TEXT,
+    ENTITY_TP,
+    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
+    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
+    TRAN_ID,
+    BACK_REF_TRAN_ID
+FROM read_csv(
+    '{SOURCE_PATH}',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CMTE_ID':'VARCHAR',
+        'AMNDT_IND':'VARCHAR',
+        'RPT_YR':'VARCHAR',
+        'RPT_TP':'VARCHAR',
+        'IMAGE_NUM':'VARCHAR',
+        'LINE_NUM':'VARCHAR',
+        'FORM_TP_CD':'VARCHAR',
+        'SCHED_TP_CD':'VARCHAR',
+        'NAME':'VARCHAR',
+        'CITY':'VARCHAR',
+        'STATE':'VARCHAR',
+        'ZIP_CODE':'VARCHAR',
+        'TRANSACTION_DT':'VARCHAR',
+        'TRANSACTION_AMT':'VARCHAR',
+        'TRANSACTION_PGI':'VARCHAR',
+        'PURPOSE':'VARCHAR',
+        'CATEGORY':'VARCHAR',
+        'CATEGORY_DESC':'VARCHAR',
+        'MEMO_CD':'VARCHAR',
+        'MEMO_TEXT':'VARCHAR',
+        'ENTITY_TP':'VARCHAR',
+        'SUB_ID':'VARCHAR',
+        'FILE_NUM':'VARCHAR',
+        'TRAN_ID':'VARCHAR',
+        'BACK_REF_TRAN_ID':'VARCHAR'
+    }
+);
+
+INSERT INTO etl.load_history (
+    load_id,
+    cycle,
+    table_name,
+    source_zip_path,
+    source_entry_name,
+    target_table_name,
+    row_count,
+    loaded_at
+)
+SELECT
+    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1),
+    {CYCLE},
+    '{TABLE_NAME}',
+    '{ZIP_PATH}',
+    {ENTRY_NAME_SQL},
+    '{TARGET_TABLE}',
+    (SELECT COUNT(*) FROM {TARGET_TABLE}),
+    NOW();

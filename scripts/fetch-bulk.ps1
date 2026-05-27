@@ -598,34 +598,58 @@ SELECT
                 exit 1
             }
 
-            $upsertCurrentStateSql = @"
+                        $qualityStatus = if ($result.Status -eq 'Completed' -or $result.Status -eq 'Skipped') { 'pass' } elseif ($result.Status -eq 'Failed') { 'error' } else { 'unknown' }
+                        $upsertCurrentStateSql = @"
 DELETE FROM etl.current_state
 WHERE entity_type = 'file'
-  AND cycle = $Cycle
-  AND entity_name = $(To-SqlStringOrNull -Value $result.ZipName);
+    AND cycle = $Cycle
+    AND entity_name = $(To-SqlStringOrNull -Value $result.ZipName);
 
-INSERT INTO etl.current_state
+INSERT INTO etl.current_state (
+        state_id,
+        entity_type,
+        cycle,
+        table_name,
+        entity_name,
+        last_operation,
+        operation_status,
+        quality_status,
+        source_url,
+        source_zip_path,
+        source_entry_name,
+        target_table_name,
+        http_status,
+        content_length,
+        row_count,
+        duration_ms,
+        response_date,
+        last_modified,
+        etag,
+        error_text,
+        updated_at
+)
 SELECT
-    COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1) AS state_id,
-    'file' AS entity_type,
-    $Cycle AS cycle,
-    $(To-SqlStringOrNull -Value $result.TableName) AS table_name,
-    $(To-SqlStringOrNull -Value $result.ZipName) AS entity_name,
-    'fetch' AS last_operation,
-    $(To-SqlStringOrNull -Value $result.Status) AS operation_status,
-    $(To-SqlStringOrNull -Value $result.Url) AS source_url,
-    NULL AS source_zip_path,
-    NULL AS source_entry_name,
-    NULL AS target_table_name,
-    $(To-SqlIntOrNull -Value $result.HttpStatus) AS http_status,
-    $(To-SqlBigIntOrNull -Value $result.ContentLength) AS content_length,
-    NULL AS row_count,
-    NULL AS duration_ms,
-    $(To-SqlStringOrNull -Value $result.ResponseDate) AS response_date,
-    $(To-SqlStringOrNull -Value $result.LastModified) AS last_modified,
-    $(To-SqlStringOrNull -Value $result.ETag) AS etag,
-    $(To-SqlStringOrNull -Value $result.Error) AS error_text,
-    NOW() AS updated_at;
+        COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1) AS state_id,
+        'file' AS entity_type,
+        $Cycle AS cycle,
+        $(To-SqlStringOrNull -Value $result.TableName) AS table_name,
+        $(To-SqlStringOrNull -Value $result.ZipName) AS entity_name,
+        'fetch' AS last_operation,
+        $(To-SqlStringOrNull -Value $result.Status) AS operation_status,
+        '$qualityStatus' AS quality_status,
+        $(To-SqlStringOrNull -Value $result.Url) AS source_url,
+        NULL AS source_zip_path,
+        NULL AS source_entry_name,
+        NULL AS target_table_name,
+        $(To-SqlIntOrNull -Value $result.HttpStatus) AS http_status,
+        $(To-SqlBigIntOrNull -Value $result.ContentLength) AS content_length,
+        NULL AS row_count,
+        NULL AS duration_ms,
+        $(To-SqlStringOrNull -Value $result.ResponseDate) AS response_date,
+        $(To-SqlStringOrNull -Value $result.LastModified) AS last_modified,
+        $(To-SqlStringOrNull -Value $result.ETag) AS etag,
+        $(To-SqlStringOrNull -Value $result.Error) AS error_text,
+        NOW() AS updated_at;
 "@
 
             duckdb $dbPathResolved -c $upsertCurrentStateSql

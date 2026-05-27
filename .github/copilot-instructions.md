@@ -40,7 +40,7 @@ db/                        # DuckDB .duckdb files — git-ignored
 scripts/                   # PowerShell entrypoint scripts
 sql/schema/                # DDL: CREATE TABLE statements
 sql/transform/             # INSERT-SELECT / merge / cleanup SQL
-sql/analysis/              # QA checks and ad hoc queries
+sql/qa/                    # QA checks and ad hoc queries
 artifacts/exploration/     # HTML: approach comparisons, implementation plans — committed
 artifacts/diagrams/        # HTML: data flow diagrams, schema maps — committed
 artifacts/reviews/         # HTML: annotated SQL/script reviews — committed

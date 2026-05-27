@@ -1,5 +1,34 @@
 LOAD zipfs;
 DROP TABLE IF EXISTS {TARGET_TABLE};
+
+CREATE TEMP TABLE _stg_{TABLE_NAME} (
+    CMTE_ID VARCHAR,
+    CMTE_NM VARCHAR,
+    TRES_NM VARCHAR,
+    CMTE_ST1 VARCHAR,
+    CMTE_ST2 VARCHAR,
+    CMTE_CITY VARCHAR,
+    CMTE_ST VARCHAR,
+    CMTE_ZIP VARCHAR,
+    CMTE_DSGN VARCHAR,
+    CMTE_TP VARCHAR,
+    CMTE_PTY_AFFILIATION VARCHAR,
+    CMTE_FILING_FREQ VARCHAR,
+    ORG_TP VARCHAR,
+    CONNECTED_ORG_NM VARCHAR,
+    CAND_ID VARCHAR
+);
+
+COPY _stg_{TABLE_NAME}
+FROM '{SOURCE_PATH}'
+(
+    DELIMITER '|',
+    HEADER FALSE,
+    AUTO_DETECT FALSE,
+    NULL_PADDING TRUE,
+    IGNORE_ERRORS TRUE
+);
+
 CREATE TABLE {TARGET_TABLE} AS
 SELECT
     CMTE_ID,
@@ -17,32 +46,7 @@ SELECT
     ORG_TP,
     CONNECTED_ORG_NM,
     CAND_ID
-FROM read_csv(
-    '{SOURCE_PATH}',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CMTE_ID':'VARCHAR',
-        'CMTE_NM':'VARCHAR',
-        'TRES_NM':'VARCHAR',
-        'CMTE_ST1':'VARCHAR',
-        'CMTE_ST2':'VARCHAR',
-        'CMTE_CITY':'VARCHAR',
-        'CMTE_ST':'VARCHAR',
-        'CMTE_ZIP':'VARCHAR',
-        'CMTE_DSGN':'VARCHAR',
-        'CMTE_TP':'VARCHAR',
-        'CMTE_PTY_AFFILIATION':'VARCHAR',
-        'CMTE_FILING_FREQ':'VARCHAR',
-        'ORG_TP':'VARCHAR',
-        'CONNECTED_ORG_NM':'VARCHAR',
-        'CAND_ID':'VARCHAR'
-    }
-);
+FROM _stg_{TABLE_NAME};
 
 INSERT INTO etl.load_history (
     load_id,

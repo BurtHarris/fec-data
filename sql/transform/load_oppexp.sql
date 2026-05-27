@@ -1,5 +1,44 @@
 LOAD zipfs;
 DROP TABLE IF EXISTS {TARGET_TABLE};
+
+CREATE TEMP TABLE _stg_{TABLE_NAME} (
+    CMTE_ID VARCHAR,
+    AMNDT_IND VARCHAR,
+    RPT_YR VARCHAR,
+    RPT_TP VARCHAR,
+    IMAGE_NUM VARCHAR,
+    LINE_NUM VARCHAR,
+    FORM_TP_CD VARCHAR,
+    SCHED_TP_CD VARCHAR,
+    NAME VARCHAR,
+    CITY VARCHAR,
+    STATE VARCHAR,
+    ZIP_CODE VARCHAR,
+    TRANSACTION_DT VARCHAR,
+    TRANSACTION_AMT VARCHAR,
+    TRANSACTION_PGI VARCHAR,
+    PURPOSE VARCHAR,
+    CATEGORY VARCHAR,
+    CATEGORY_DESC VARCHAR,
+    MEMO_CD VARCHAR,
+    MEMO_TEXT VARCHAR,
+    ENTITY_TP VARCHAR,
+    SUB_ID VARCHAR,
+    FILE_NUM VARCHAR,
+    TRAN_ID VARCHAR,
+    BACK_REF_TRAN_ID VARCHAR
+);
+
+COPY _stg_{TABLE_NAME}
+FROM '{SOURCE_PATH}'
+(
+    DELIMITER '|',
+    HEADER FALSE,
+    AUTO_DETECT FALSE,
+    NULL_PADDING TRUE,
+    IGNORE_ERRORS TRUE
+);
+
 CREATE TABLE {TARGET_TABLE} AS
 SELECT
     CMTE_ID,
@@ -27,42 +66,7 @@ SELECT
     TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
     TRAN_ID,
     BACK_REF_TRAN_ID
-FROM read_csv(
-    '{SOURCE_PATH}',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CMTE_ID':'VARCHAR',
-        'AMNDT_IND':'VARCHAR',
-        'RPT_YR':'VARCHAR',
-        'RPT_TP':'VARCHAR',
-        'IMAGE_NUM':'VARCHAR',
-        'LINE_NUM':'VARCHAR',
-        'FORM_TP_CD':'VARCHAR',
-        'SCHED_TP_CD':'VARCHAR',
-        'NAME':'VARCHAR',
-        'CITY':'VARCHAR',
-        'STATE':'VARCHAR',
-        'ZIP_CODE':'VARCHAR',
-        'TRANSACTION_DT':'VARCHAR',
-        'TRANSACTION_AMT':'VARCHAR',
-        'TRANSACTION_PGI':'VARCHAR',
-        'PURPOSE':'VARCHAR',
-        'CATEGORY':'VARCHAR',
-        'CATEGORY_DESC':'VARCHAR',
-        'MEMO_CD':'VARCHAR',
-        'MEMO_TEXT':'VARCHAR',
-        'ENTITY_TP':'VARCHAR',
-        'SUB_ID':'VARCHAR',
-        'FILE_NUM':'VARCHAR',
-        'TRAN_ID':'VARCHAR',
-        'BACK_REF_TRAN_ID':'VARCHAR'
-    }
-);
+FROM _stg_{TABLE_NAME};
 
 INSERT INTO etl.load_history (
     load_id,

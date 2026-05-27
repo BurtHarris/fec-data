@@ -5,6 +5,8 @@
 #
 # This script is run manually by choice; it is never called automatically
 # by the ETL pipeline.
+# If you or an agent needs to change installed tools, update
+# .config/configuration.winget first instead of adding direct installs here.
 #
 # Run from the project root:
 #   .\scripts\setup-tools.ps1

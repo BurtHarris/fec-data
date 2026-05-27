@@ -34,7 +34,8 @@ param(
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$Tables,
     [string]$DbPath = 'db/fec.duckdb',
-    [string]$TimingLabel
+    [string]$TimingLabel,
+    [switch]$ShowProgress
 )
 
 $ErrorActionPreference = 'Stop'
@@ -91,7 +92,7 @@ $entryNameMap = @{
     'cn'     = 'cn.txt'
     'indiv'  = 'itcont.txt'  # non-standard: archive entry does not match table name
     'oppexp' = 'oppexp.txt'
-    'oth'    = 'oth.txt'
+    'oth'    = 'itoth.txt'  # non-standard: archive entry does not match table name
     'pas2'   = 'pas2.txt'
     'weball' = 'weball.txt'
 }
@@ -135,9 +136,37 @@ finally {
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $dbPathResolved) -Force | Out-Null
 
+function Invoke-DuckDbSql {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DbPath,
+        [Parameter(Mandatory = $true)]
+        [string]$Sql,
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    Write-Host "[DUCKDB] $Description"
+    duckdb $DbPath -c $Sql
+}
+
+function Invoke-DuckDbCsv {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DbPath,
+        [Parameter(Mandatory = $true)]
+        [string]$Sql,
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    Write-Host "[DUCKDB] $Description"
+    return (duckdb -csv $DbPath $Sql)
+}
+
 # Initialize required schemas/tables.
 $initCommand = ".read '$($schemaSqlPath.Replace('\', '/'))'"
-duckdb $dbPathResolved -c $initCommand
+Invoke-DuckDbSql -DbPath $dbPathResolved -Sql $initCommand -Description "Initializing schema objects from $schemaSqlPath"
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'Failed to initialize DuckDB schema objects.'
     exit 1
@@ -145,7 +174,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Ensure zipfs is available so DuckDB can read CSVs inside ZIP archives.
 $zipFsInstallSql = 'INSTALL zipfs FROM community;'
-duckdb $dbPathResolved -c $zipFsInstallSql
+Invoke-DuckDbSql -DbPath $dbPathResolved -Sql $zipFsInstallSql -Description 'Installing zipfs extension'
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'Failed to install DuckDB zipfs extension from community.'
     exit 1
@@ -227,7 +256,7 @@ function Get-NextQaRunId {
     )
 
     $runIdText = (
-        duckdb -csv $DbPath "SELECT COALESCE(MAX(run_id) + 1, 1) FROM etl.qa_run_summary;" |
+        Invoke-DuckDbCsv -DbPath $DbPath -Sql "SELECT COALESCE(MAX(run_id) + 1, 1) FROM etl.qa_run_summary;" -Description 'Selecting next QA run id' |
             Select-Object -Last 1
     ).Trim()
     if (-not $runIdText) {
@@ -252,7 +281,7 @@ function Invoke-QaSqlTemplate {
         $sql = $sql.Replace($pair.Key, $pair.Value)
     }
 
-    duckdb $DbPath -c $sql
+    Invoke-DuckDbSql -DbPath $DbPath -Sql $sql -Description "Executing QA SQL template $(Split-Path -Leaf $TemplatePath)"
     if ($LASTEXITCODE -ne 0) {
         throw "QA SQL execution failed for template '$TemplatePath'."
     }
@@ -336,7 +365,7 @@ WHERE entity_type = 'table'
   AND table_name = '$Table';
 "@
 
-    duckdb $DbPath -c $qualityStatusSql
+    Invoke-DuckDbSql -DbPath $DbPath -Sql $qualityStatusSql -Description "Updating QA quality status for table $Table"
     if ($LASTEXITCODE -ne 0) {
         throw "Failed updating QA quality status for table '$Table'."
     }
@@ -356,7 +385,7 @@ function Test-DuckDbRawTableExists {
         }
 
         $existsText = (
-        duckdb -csv $DbPath @"
+        Invoke-DuckDbCsv -DbPath $DbPath -Description "Checking existence of raw_fec.$tableNameOnly" -Sql @"
 SELECT COUNT(*)
 FROM information_schema.tables
 WHERE table_schema = 'raw_fec'
@@ -581,7 +610,7 @@ WHERE entity_type = 'table'
   AND table_name = '$Table';
 "@
 
-        duckdb $DbPath -c $qualityStatusSql
+        Invoke-DuckDbSql -DbPath $DbPath -Sql $qualityStatusSql -Description "Updating cross-table QA status for table $Table"
         if ($LASTEXITCODE -ne 0) {
             throw "Failed updating cross-table QA quality status for table '$Table'."
         }
@@ -601,7 +630,9 @@ foreach ($table in $Tables) {
 
     Write-Host "[$index/$total] Processing $zipName..."
 
-    Write-Progress -Id 1 -Activity "Loading FEC tables for cycle $Cycle" -Status "[$index/$total] $zipName" -PercentComplete ([int](($index * 100) / $total))
+    if ($ShowProgress) {
+        Write-Progress -Id 1 -Activity "Loading FEC tables for cycle $Cycle" -Status "[$index/$total] $zipName" -PercentComplete ([int](($index * 100) / $total))
+    }
 
     if (-not (Test-Path -Path $zipPath -PathType Leaf)) {
         Write-Warning "ZIP not found, skipping: $zipPath"
@@ -633,7 +664,7 @@ foreach ($table in $Tables) {
             -replace '\{ZIP_PATH\}', $zipPathSql `
             -replace '\{ENTRY_NAME_SQL\}', $entryNameHistorySql
 
-        duckdb $dbPathResolved -c $loadSql
+        Invoke-DuckDbSql -DbPath $dbPathResolved -Sql $loadSql -Description "Loading $zipName into $targetTable"
         if ($LASTEXITCODE -ne 0) {
             throw "DuckDB load failed for $zipName"
         }
@@ -692,7 +723,7 @@ SELECT
     NOW() AS updated_at;
 "@
 
-        duckdb $dbPathResolved -c $stateSql
+        Invoke-DuckDbSql -DbPath $dbPathResolved -Sql $stateSql -Description "Updating current_state for $zipName"
         if ($LASTEXITCODE -ne 0) {
             throw "Failed writing table current-state for $zipName"
         }
@@ -709,7 +740,7 @@ WHERE load_id = (
 );
 "@
 
-        duckdb $dbPathResolved -c $durationUpdateSql
+        Invoke-DuckDbSql -DbPath $dbPathResolved -Sql $durationUpdateSql -Description "Updating load duration for $zipName"
         if ($LASTEXITCODE -ne 0) {
             throw "Failed writing load duration for $zipName"
         }
@@ -806,7 +837,7 @@ $timingRows.Add([PSCustomObject]@{
         measured_at_utc  = [DateTime]::UtcNow.ToString('o')
         error_text       = $_.ToString()
     }) | Out-Null
-duckdb $dbPathResolved -c $stateFailureSql | Out-Null
+Invoke-DuckDbSql -DbPath $dbPathResolved -Sql $stateFailureSql -Description "Recording failed current_state for $zipName"
 Write-Error "Failed loading ${zipName}: $_"
 throw
     }
@@ -819,7 +850,9 @@ foreach ($table in $Tables) {
     }
 }
 
-Write-Progress -Id 1 -Activity "Loading FEC tables for cycle $Cycle" -Completed
+if ($ShowProgress) {
+    Write-Progress -Id 1 -Activity "Loading FEC tables for cycle $Cycle" -Completed
+}
 if ($timingRows.Count -gt 0) {
     New-Item -ItemType Directory -Path $timingRunsDir -Force | Out-Null
     $timingFileName = "load_timing_${Cycle}_${runTimestampToken}_${timingLabelToken}_${gitCommit}_${gitTreeState}.csv"

@@ -116,6 +116,15 @@ For the FEC bulk downloader in PowerShell, which caches the raw ZIP artifacts fo
 .\scripts\fetch-bulk.ps1 2020
 ```
 
+For load timing comparison runs (for example, `main` vs a feature branch), pass a timing label:
+
+```powershell
+.\scripts\load-fec-duckdb.ps1 -Cycle 2026 -Tables cm,cn,indiv -TimingLabel main
+.\scripts\load-fec-duckdb.ps1 -Cycle 2026 -Tables cm,cn,indiv -TimingLabel feature
+```
+
+The script writes per-table timing CSV files to `logs/load-timing/` with git commit and tree-state metadata.
+
 To make the repo scripts callable by name from terminal, add the repo `scripts` folder to your PowerShell PATH:
 
 ```powershell

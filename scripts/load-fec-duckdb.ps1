@@ -33,7 +33,8 @@ param(
     [string]$Cycle,
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$Tables,
-    [string]$DbPath = 'db/fec.duckdb'
+    [string]$DbPath = 'db/fec.duckdb',
+    [string]$TimingLabel
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,6 +74,15 @@ $yy = $Cycle.Substring(2)
 $dbPathResolved = if ([System.IO.Path]::IsPathRooted($DbPath)) { $DbPath } else { Join-Path $repoRoot $DbPath }
 $schemaSqlPath = Join-Path $repoRoot 'sql\schema\001_create_fec_schemas.sql'
 $transformDir = Join-Path $repoRoot 'sql\transform'
+$logsDir = Join-Path $repoRoot 'logs'
+$timingRunsDir = Join-Path $logsDir 'load-timing'
+$runStartedAtUtc = [DateTime]::UtcNow
+$runTimestampToken = $runStartedAtUtc.ToString('yyyyMMdd_HHmmss')
+$timingLabelSanitized = if ($TimingLabel) { ($TimingLabel -replace '[^A-Za-z0-9._-]', '_').Trim('_') } else { '' }
+$timingLabelToken = if ([string]::IsNullOrWhiteSpace($timingLabelSanitized)) { 'default' } else { $timingLabelSanitized }
+$timingRows = New-Object System.Collections.Generic.List[object]
+$gitCommit = 'unknown'
+$gitTreeState = 'unknown'
 
 # ZIP entry names per table — explicit to avoid ambiguity on multi-file archives.
 $entryNameMap = @{
@@ -99,6 +109,28 @@ if (-not (Test-Path -Path $transformDir -PathType Container)) {
 if (-not (Test-Path -Path $schemaSqlPath -PathType Leaf)) {
     Write-Error "Schema SQL not found: $schemaSqlPath"
     exit 1
+}
+
+Push-Location $repoRoot
+try {
+    $gitCommitText = (& git --no-pager rev-parse --short HEAD | Select-Object -Last 1)
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($gitCommitText)) {
+        $gitCommit = $gitCommitText.Trim()
+    }
+    else {
+        Write-Warning 'Unable to resolve git commit SHA for timing metadata.'
+    }
+
+    $gitStatusText = (& git --no-pager status --porcelain)
+    if ($LASTEXITCODE -eq 0) {
+        $gitTreeState = if ([string]::IsNullOrWhiteSpace(($gitStatusText -join ''))) { 'clean' } else { 'dirty' }
+    }
+    else {
+        Write-Warning 'Unable to resolve git working tree state for timing metadata.'
+    }
+}
+finally {
+    Pop-Location
 }
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $dbPathResolved) -Force | Out-Null
@@ -685,7 +717,21 @@ WHERE load_id = (
         Invoke-QaAuditsForTable -DbPath $dbPathResolved -Cycle $Cycle -Table $table -TargetTable $targetTable
 
         $loadedCount++
-        Write-Host "[$index/$total] Loaded $zipName into $targetTable"
+        $timingRows.Add([PSCustomObject]@{
+                run_started_utc  = $runStartedAtUtc.ToString('o')
+                cycle            = [int]$Cycle
+                timing_label     = $timingLabelToken
+                git_commit       = $gitCommit
+                git_tree_state   = $gitTreeState
+                table_name       = $table
+                zip_name         = $zipName
+                target_table     = $targetTable
+                status           = 'loaded'
+                duration_ms      = $loadDurationMs
+                measured_at_utc  = [DateTime]::UtcNow.ToString('o')
+                error_text       = $null
+            }) | Out-Null
+        Write-Host "[$index/$total] Loaded $zipName into $targetTable in $loadDurationMs ms"
         Write-Verbose "LOADED  $zipName -> $targetTable"
     }
     catch {
@@ -746,9 +792,23 @@ SELECT
     NOW() AS updated_at;
 "@
 
-        duckdb $dbPathResolved -c $stateFailureSql | Out-Null
-        Write-Error "Failed loading ${zipName}: $_"
-        throw
+$timingRows.Add([PSCustomObject]@{
+        run_started_utc  = $runStartedAtUtc.ToString('o')
+        cycle            = [int]$Cycle
+        timing_label     = $timingLabelToken
+        git_commit       = $gitCommit
+        git_tree_state   = $gitTreeState
+        table_name       = $table
+        zip_name         = $zipName
+        target_table     = if ($targetTable) { $targetTable } else { $null }
+        status           = 'failed'
+        duration_ms      = $loadDurationMs
+        measured_at_utc  = [DateTime]::UtcNow.ToString('o')
+        error_text       = $_.ToString()
+    }) | Out-Null
+duckdb $dbPathResolved -c $stateFailureSql | Out-Null
+Write-Error "Failed loading ${zipName}: $_"
+throw
     }
 }
 
@@ -760,6 +820,13 @@ foreach ($table in $Tables) {
 }
 
 Write-Progress -Id 1 -Activity "Loading FEC tables for cycle $Cycle" -Completed
+if ($timingRows.Count -gt 0) {
+    New-Item -ItemType Directory -Path $timingRunsDir -Force | Out-Null
+    $timingFileName = "load_timing_${Cycle}_${runTimestampToken}_${timingLabelToken}_${gitCommit}_${gitTreeState}.csv"
+    $timingFilePath = Join-Path $timingRunsDir $timingFileName
+    $timingRows | Export-Csv -Path $timingFilePath -NoTypeInformation -Encoding UTF8
+    Write-Host "Timing report written: $timingFilePath"
+}
 Write-Host "Load summary for ${Cycle}: loaded $loadedCount, skipped $skippedCount, failed $failedCount, total $total."
 
 if ($failedCount -gt 0) {

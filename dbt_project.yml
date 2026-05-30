@@ -1,11 +1,11 @@
-name: "fec_data"
+name: "moneytrail"
 version: "0.1.0"
 config-version: 2
 
 # dbt looks for a matching profile in profiles.yml. Keeping profiles.yml in
 # this repo lets new users run with `--profiles-dir .` instead of editing home
 # directory config.
-profile: "fec_data"
+profile: "moneytrail"
 
 model-paths: ["models"]
 macro-paths: ["macros"]
@@ -27,12 +27,12 @@ on-run-start:
   - "CREATE SCHEMA IF NOT EXISTS review"
 
 models:
-  fec_data:
+  moneytrail:
     raw_fec:
       +schema: raw_fec
       +materialized: table
 
 seeds:
-  fec_data:
+  moneytrail:
     review:
       +schema: review

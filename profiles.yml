@@ -1,4 +1,4 @@
-fec_data:
+moneytrail:
   target: dev
   outputs:
     dev:

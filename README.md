@@ -1,6 +1,11 @@
-# FEC Campaign Finance ETL (Simple Usage)
+# MoneyTrail - Follow the money in politics
 
-This project downloads FEC bulk ZIPs and loads them into DuckDB.
+“Follow the money.” — Deep Thraot in All the President’s Men
+
+MoneyTrail is a citizen‑developer project for loading the Federal Election Commission’s bulk data files into a personal OLAP database. Once the data is structured and queryable, it can be used to conduct independent research into who is contributing and spending money in federal elections, and how financial activity shapes our political environment. 
+
+Instead of relying on what political actors say, MoneyTrail makes it possible to observe what they actually do through their financial disclosures.
+
 
 Scope note: this setup is currently optimized for single-user local operation.
 Operational metadata and QA logs are stored in a local, single-user SQLite database.

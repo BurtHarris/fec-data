@@ -243,7 +243,7 @@ def download_one(plan: DownloadPlan, force: bool, progress_interval: float) -> s
     """Download one file, using ETag/Last-Modified headers when available."""
 
     plan.zip_path.parent.mkdir(parents=True, exist_ok=True)
-    headers = {"User-Agent": "fec-data-dbt/0.1"}
+    headers = {"User-Agent": "moneytrail/0.1"}
     cached = read_meta(plan.meta_path)
 
     # Conditional requests let the FEC server answer 304 Not Modified when our

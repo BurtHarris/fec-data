@@ -1,4 +1,4 @@
-"""Load downloaded FEC ZIP artifacts into DuckDB raw tables."""
+"""Transform downloaded FEC ZIP artifacts into DuckDB raw tables."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import duckdb
 
-from fec_pipeline.etl_config import DEFAULT_ETL_CONFIG_PATH, load_etl_model_config, repo_root
+from pipeline.etl_config import DEFAULT_ETL_CONFIG_PATH, load_etl_model_config, repo_root
 
 
 @dataclass(frozen=True)

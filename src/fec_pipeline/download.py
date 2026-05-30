@@ -13,11 +13,15 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import yaml
+
 
 DEFAULT_TABLES = ("ccl", "cm", "cn", "indiv", "oppexp", "oth", "pas2", "weball")
+DEFAULT_COVERAGE_CONFIG = Path("config") / "fec_bulk_coverage.yml"
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,130 @@ def normalize_tables(raw_tables: list[str] | None) -> list[str]:
         raise SystemExit(f"Unknown table(s): {', '.join(invalid)}. Valid tables: {valid}")
 
     return tables
+
+
+def parse_year_range(raw_value: Any, context: str) -> tuple[int, int]:
+    """Parse a year range such as 2020-2026 or a single year."""
+
+    if isinstance(raw_value, int):
+        return raw_value, raw_value
+
+    if not isinstance(raw_value, str):
+        raise SystemExit(f"{context} must be a year or year range string")
+
+    value = raw_value.strip()
+    if not value:
+        raise SystemExit(f"{context} cannot be empty")
+
+    if "-" in value:
+        start_text, end_text = [part.strip() for part in value.split("-", 1)]
+        start_year = int(start_text)
+        end_year = int(end_text)
+    else:
+        start_year = end_year = int(value)
+
+    if start_year > end_year:
+        raise SystemExit(f"{context} start year must not be greater than end year")
+
+    return start_year, end_year
+
+
+def year_in_range(year: int, year_range: tuple[int, int]) -> bool:
+    """Return True when a year falls within an inclusive range."""
+
+    start_year, end_year = year_range
+    return start_year <= year <= end_year
+
+
+def year_range_values(year_range: tuple[int, int]) -> list[int]:
+    """Expand an inclusive year range into even election cycles only."""
+
+    start_year, end_year = year_range
+    first = start_year if start_year % 2 == 0 else start_year + 1
+    return list(range(first, end_year + 1, 2))
+
+
+def validate_even_cycle(cycle: int, context: str) -> None:
+    """Fail fast when a provided cycle year is not even."""
+
+    if cycle % 2 != 0:
+        raise SystemExit(f"{context} must be an even election cycle year: {cycle}")
+
+
+def load_coverage_config(path: Path) -> dict[str, Any] | None:
+    """Read cycle coverage config; missing file means use built-in defaults."""
+
+    if not path.exists():
+        return None
+
+    with path.open("r", encoding="utf-8") as handle:
+        loaded = yaml.safe_load(handle) or {}
+
+    if not isinstance(loaded, dict):
+        raise SystemExit(f"Coverage config must be a mapping: {path}")
+
+    return loaded
+
+
+def normalize_group_tables(values: list[Any], context: str) -> list[str]:
+    """Normalize a list of table names in a coverage group."""
+
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise SystemExit(f"{context} entries must be strings")
+        normalized.append(value.strip().lower())
+    return normalized
+
+
+def resolve_cycle_tables(cycle: int, config: dict[str, Any] | None) -> list[str]:
+    """Resolve tables for one cycle using the top-level config ranges."""
+
+    validate_even_cycle(cycle, "cycle")
+
+    if not config:
+        return list(DEFAULT_TABLES)
+
+    coverage_range = parse_year_range(config.get("coverage"), "coverage")
+    facts_range = parse_year_range(config.get("facts"), "facts")
+    groups_raw = config.get("table_groups", {})
+
+    if not isinstance(groups_raw, dict):
+        raise SystemExit("table_groups must be a mapping")
+
+    if facts_range[0] < coverage_range[0] or facts_range[1] > coverage_range[1]:
+        raise SystemExit("facts range must be fully contained within coverage range")
+
+    if not year_in_range(cycle, coverage_range):
+        return []
+
+    groups: dict[str, list[str]] = {}
+    for name, tables in groups_raw.items():
+        if not isinstance(name, str) or not isinstance(tables, list):
+            raise SystemExit("table_groups entries must be name: [table, ...]")
+        groups[name] = normalize_group_tables(tables, f"table_groups.{name}")
+
+    if "dimensions" not in groups or "facts" not in groups:
+        raise SystemExit("table_groups must define dimensions and facts")
+
+    tables = list(groups["dimensions"])
+    if year_in_range(cycle, facts_range):
+        tables.extend(groups["facts"])
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for table in tables:
+        if table in seen:
+            continue
+        seen.add(table)
+        resolved.append(table)
+
+    invalid = sorted(set(resolved) - set(DEFAULT_TABLES))
+    if invalid:
+        valid = ", ".join(DEFAULT_TABLES)
+        raise SystemExit(f"Unknown table(s) in coverage config: {', '.join(invalid)}. Valid tables: {valid}")
+
+    return resolved
 
 
 def build_plan(cycle: int, table: str, root: Path) -> DownloadPlan:
@@ -171,8 +299,27 @@ def download_one(plan: DownloadPlan, force: bool, progress_interval: float) -> s
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download FEC bulk ZIP files.")
-    parser.add_argument("cycle", type=int, help="Election cycle year, e.g. 2026.")
-    parser.add_argument("tables", nargs="*", help="Optional table names, e.g. indiv cm.")
+    parser.add_argument(
+        "--cycles",
+        nargs="*",
+        type=int,
+        help="Debug only: explicit cycle years to download instead of reading the coverage range.",
+    )
+    parser.add_argument(
+        "--tables",
+        nargs="*",
+        help="Debug only: explicit table names to download instead of using coverage selection.",
+    )
+    parser.add_argument(
+        "--coverage-config",
+        default=str(DEFAULT_COVERAGE_CONFIG),
+        help="Coverage YAML path used by default operation.",
+    )
+    parser.add_argument(
+        "--strict-coverage",
+        action="store_true",
+        help="Fail when a debug cycle is outside the configured coverage range.",
+    )
     parser.add_argument("--force", action="store_true", help="Download even if cached metadata matches.")
     parser.add_argument("--parallelism", type=int, default=4, help="Maximum concurrent downloads.")
     parser.add_argument(
@@ -183,8 +330,46 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    tables = normalize_tables(args.tables)
-    plans = [build_plan(args.cycle, table, repo_root()) for table in tables]
+    root = repo_root()
+    config_path = Path(args.coverage_config)
+    if not config_path.is_absolute():
+        config_path = root / config_path
+    config = load_coverage_config(config_path)
+    if config is None:
+        raise SystemExit(f"Coverage config not found: {config_path}")
+
+    if args.cycles:
+        cycles = list(dict.fromkeys(args.cycles))
+        for cycle in cycles:
+            validate_even_cycle(cycle, "--cycles entry")
+    else:
+        coverage_range = parse_year_range(config.get("coverage"), "coverage")
+        cycles = year_range_values(coverage_range)
+
+    if args.tables:
+        tables = normalize_tables(args.tables)
+    else:
+        tables = []
+
+    plans: list[DownloadPlan] = []
+    for cycle in cycles:
+        if args.tables:
+            cycle_tables = tables
+        else:
+            cycle_tables = resolve_cycle_tables(cycle, config)
+            if args.cycles and args.strict_coverage and not cycle_tables:
+                raise SystemExit(f"Cycle {cycle} is outside the configured coverage range")
+
+        if not cycle_tables:
+            print(f"cycle {cycle} resolved to zero tables; skipping downloads", flush=True)
+            continue
+
+        print(f"cycle {cycle}: {', '.join(cycle_tables)}", flush=True)
+        plans.extend(build_plan(cycle, table, root) for table in cycle_tables)
+
+    if not plans:
+        print("no downloads were configured", flush=True)
+        return
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as executor:
         futures = [executor.submit(download_one, plan, args.force, args.progress_interval) for plan in plans]

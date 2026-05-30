@@ -1,0 +1,11 @@
+version: 1
+
+# Default operating ranges. Cycles in `coverage` are eligible for download.
+# Cycles in `facts` receive the full table set; the rest receive dimensions only.
+coverage: 2020-2026
+facts: 2022-2026
+
+# Canonical FEC table sets used by the downloader.
+table_groups:
+  dimensions: [cm, cn, ccl, weball]
+  facts: [indiv, oppexp, oth, pas2]

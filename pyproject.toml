@@ -5,10 +5,13 @@ description = "Local FEC bulk-data downloader and dbt-duckdb project."
 requires-python = ">=3.11"
 dependencies = [
     "dbt-duckdb>=1.9,<2",
+    "PyYAML>=6,<7",
 ]
 
 [project.scripts]
-# This gives you a friendly command via `uv run fec-download ...`.
+# Primary console script.
+download = "fec_pipeline.download:main"
+# Backward-compatible alias.
 fec-download = "fec_pipeline.download:main"
 
 [tool.uv]

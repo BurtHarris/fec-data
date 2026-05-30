@@ -108,16 +108,30 @@ ZIPs.
 uv sync
 ```
 
-2. Download a cycle:
+2. Download according to the configured coverage ranges:
 
 ```powershell
-uv run fec-download 2026
+uv run download
 ```
 
-You can limit the run while learning:
+You can override the defaults for debugging:
 
 ```powershell
-uv run fec-download 2026 cm cn --parallelism 2
+uv run download --cycles 2026 --tables cm cn --parallelism 2
+```
+
+Coverage can also be configured by cycle type in `config/fec_bulk_coverage.yml`.
+When no explicit tables are provided, the downloader resolves tables from that
+config.
+
+```powershell
+uv run download --cycles 2024
+```
+
+To fail fast for cycles not listed in the coverage config, use strict mode:
+
+```powershell
+uv run download --cycles 2030 --strict-coverage
 ```
 
 3. Build DuckDB tables with dbt:

@@ -374,10 +374,14 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "dbt-duckdb" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dbt-duckdb", specifier = ">=1.9,<2" }]
+requires-dist = [
+    { name = "dbt-duckdb", specifier = ">=1.9,<2" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+]
 
 [[package]]
 name = "idna"

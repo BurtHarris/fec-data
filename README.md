@@ -3,7 +3,7 @@
 This project downloads FEC bulk ZIPs and loads them into DuckDB.
 
 Scope note: this setup is currently optimized for single-user local operation.
-Operational metadata and QA logs are stored in a local SQLite database.
+Operational metadata and QA logs are stored in a local, single-user SQLite database.
 
 If you just want to run it:
 

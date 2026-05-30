@@ -1,6 +1,7 @@
 {
     "recommendations": [
         "galbezalel.vscode-duckdb-notebook",
-        "chuckjonas.duckdb"
+        "chuckjonas.duckdb",
+        "ms-vscode.live-server"
     ]
 }

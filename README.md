@@ -2,10 +2,9 @@
 
 “Follow the money.” — Deep Thraot in All the President’s Men
 
-MoneyTrail is a citizen‑developer project for loading the Federal Election Commission’s bulk data files into a personal OLAP database. Once the data is structured and queryable, it can be used to conduct independent research into who is contributing and spending money in federal elections, and how financial activity shapes our political environment. 
+MoneyTrail is a citizen‑developer project for loading the Federal Election Commission’s bulk data files into a personal OLAP database. Once the data is structured and queryable, it can be used to conduct independent research into who is contributing and spending money in federal elections, and how financial activity shapes our political environment.
 
 Instead of relying on what political actors say, MoneyTrail makes it possible to observe what they actually do through their financial disclosures.
-
 
 Scope note: this setup is currently optimized for single-user local operation.
 Operational metadata and QA logs are stored in a local, single-user SQLite database.
@@ -21,7 +20,6 @@ If you just want to run it:
 Run from repository root:
 
 1. Review/edit `config/fec_bulk_coverage.yml` for the cycles/tables you want.
-
 2. Run:
 
 ```powershell
@@ -56,6 +54,16 @@ Optional tool bootstrap on Windows:
 ```powershell
 .\scripts\setup-tools.ps1
 ```
+
+## HTML Artifact Preview
+
+This repo keeps committed, self-contained HTML artifacts under `artifacts/` for analysis notes, diagrams, reviews, and reports. For this project, the recommended in-editor preview workflow is the official VS Code Live Preview extension (`ms-vscode.live-server`), which is listed in the workspace recommendations.
+
+1. Open an HTML artifact file.
+2. Run `Live Preview: Show Preview` from the Command Palette.
+3. Keep the preview beside the editor while you iterate on the file.
+
+For a final rendering check, open the same file in your normal browser as well.
 
 ## Appendix: CLI Debug Options
 

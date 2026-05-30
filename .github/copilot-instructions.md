@@ -13,8 +13,20 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 - 7-Zip CLI — unpacking downloaded zip files
 - PowerShell — ETL orchestration scripts
 - jq — JSON parsing in shell pipelines
+- ripgrep (`rg`) — fast recursive search
+- fd — fast file discovery
+- fzf — interactive fuzzy finding
+- bat — syntax-highlighted file preview
+- delta — improved git diff display
+- GitHub CLI (`gh`) — GitHub operations
 - Windows (PowerShell for ETL and admin tasks)
 - winget — tool provisioning (`.config/configuration.winget`)
+
+## Preferred CLI Tooling for Agents
+
+- Prefer `rg` for text/code search and `fd` for file discovery.
+- Prefer `gh` for GitHub operations.
+- Use `bat`/`delta` when readable file/diff output is helpful.
 
 ## Storage Strategy
 

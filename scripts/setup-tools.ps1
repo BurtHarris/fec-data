@@ -3,6 +3,13 @@
 # Safe to rerun — winget configure is idempotent and will upgrade packages
 # to the configured version if they are already installed.
 #
+# Installs current local ETL dependencies:
+# - Python 3.11
+# - uv
+# - DuckDB CLI
+# - Git
+# - jq
+#
 # This script is run manually by choice; it is never called automatically
 # by the ETL pipeline.
 #

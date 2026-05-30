@@ -3,6 +3,22 @@ properties:
   configurationVersion: 0.2.0
   resources:
     - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Python311
+      directives:
+        description: Install Python 3.11 runtime for local ETL CLI tools
+      settings:
+        id: Python.Python.3.11
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Uv
+      directives:
+        description: Install uv for Python environment and command execution
+      settings:
+        id: Astral-sh.uv
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: DuckDBCli
       directives:
         description: Install DuckDB CLI for local analytics and ETL SQL
@@ -19,33 +35,9 @@ properties:
         source: winget
 
     - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: WSL
-      directives:
-        description: Install Windows Subsystem for Linux (optional bash environment)
-      settings:
-        id: Microsoft.WSL
-        source: winget
-
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: Curl
-      directives:
-        description: Install curl CLI
-      settings:
-        id: cURL.cURL
-        source: winget
-
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: Jq
       directives:
         description: Install jq for JSON parsing in shell pipelines
       settings:
         id: jqlang.jq
-        source: winget
-
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: SevenZip
-      directives:
-        description: Install 7-Zip for file extraction
-      settings:
-        id: 7zip.7zip
         source: winget

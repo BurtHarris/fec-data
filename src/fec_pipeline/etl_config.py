@@ -1,4 +1,4 @@
-"""Load raw FEC model metadata from the dbt schema YAML."""
+"""Load suite-level ETL metadata from the dbt schema YAML."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from typing import Any
 import yaml
 
 
-DEFAULT_SCHEMA_PATH = Path("models") / "raw_fec" / "schema.yml"
+DEFAULT_ETL_CONFIG_PATH = Path("models") / "raw_fec" / "schema.yml"
 
 
 @dataclass(frozen=True)
-class RawFecModelConfig:
-    """Configuration for one raw FEC model."""
+class EtlModelConfig:
+    """Configuration metadata for one ETL model target."""
 
     name: str
     source_entry: str
@@ -67,30 +67,30 @@ def resolve_source_entry(meta: dict[str, Any], model_name: str, cycle_suffix: st
     return source_entry.strip()
 
 
-def load_raw_fec_model_config(schema_path: Path, cycle_suffix: str | None = None) -> list[RawFecModelConfig]:
-    """Read the raw FEC model metadata from schema.yml."""
+def load_etl_model_config(config_path: Path, cycle_suffix: str | None = None) -> list[EtlModelConfig]:
+    """Read ETL model metadata from the suite YAML config."""
 
-    if not schema_path.exists():
-        raise SystemExit(f"Raw FEC schema config not found: {schema_path}")
+    if not config_path.exists():
+        raise SystemExit(f"ETL config not found: {config_path}")
 
-    with schema_path.open("r", encoding="utf-8") as handle:
+    with config_path.open("r", encoding="utf-8") as handle:
         loaded = yaml.safe_load(handle) or {}
 
     if not isinstance(loaded, dict):
-        raise SystemExit(f"Raw FEC schema config must be a mapping: {schema_path}")
+        raise SystemExit(f"ETL config must be a mapping: {config_path}")
 
     models = loaded.get("models")
     if not isinstance(models, list):
-        raise SystemExit(f"Raw FEC schema config must define a models list: {schema_path}")
+        raise SystemExit(f"ETL config must define a models list: {config_path}")
 
-    configs: list[RawFecModelConfig] = []
+    configs: list[EtlModelConfig] = []
     for model in models:
         if not isinstance(model, dict):
-            raise SystemExit(f"Each raw FEC model entry must be a mapping: {schema_path}")
+            raise SystemExit(f"Each ETL model entry must be a mapping: {config_path}")
 
         name = model.get("name")
         if not isinstance(name, str) or not name.strip():
-            raise SystemExit(f"Each raw FEC model entry must define a name: {schema_path}")
+            raise SystemExit(f"Each ETL model entry must define a name: {config_path}")
 
         meta = model.get("meta") or {}
         if not isinstance(meta, dict):
@@ -98,24 +98,24 @@ def load_raw_fec_model_config(schema_path: Path, cycle_suffix: str | None = None
 
         source_entry = resolve_source_entry(meta, name, cycle_suffix)
         zip_columns = normalize_str_list(meta.get("zip_columns"), f"meta.zip_columns for {name}")
-        configs.append(RawFecModelConfig(name=name, source_entry=source_entry, zip_columns=zip_columns))
+        configs.append(EtlModelConfig(name=name, source_entry=source_entry, zip_columns=zip_columns))
 
     return configs
 
 
 def main() -> None:
-    """Emit the raw FEC model config as JSON for the PowerShell loader."""
+    """Emit the ETL model config as JSON."""
 
-    parser = argparse.ArgumentParser(description="Read raw FEC dbt model config.")
-    parser.add_argument("--schema", default=str(DEFAULT_SCHEMA_PATH), help="Path to models/raw_fec/schema.yml")
+    parser = argparse.ArgumentParser(description="Read suite ETL model config.")
+    parser.add_argument("--config", default=str(DEFAULT_ETL_CONFIG_PATH), help="Path to suite YAML config")
     parser.add_argument("--cycle-suffix", help="Two-digit cycle suffix used by cycle-specific filenames.")
     args = parser.parse_args()
 
-    schema_path = Path(args.schema)
-    if not schema_path.is_absolute():
-        schema_path = repo_root() / schema_path
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        config_path = repo_root() / config_path
 
-    configs = load_raw_fec_model_config(schema_path, args.cycle_suffix)
+    configs = load_etl_model_config(config_path, args.cycle_suffix)
     print(json.dumps([asdict(config) for config in configs], indent=2))
 
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import shutil
+import sqlite3
 import time
 import zipfile
 from dataclasses import dataclass
@@ -12,7 +14,7 @@ from pathlib import Path
 
 import duckdb
 
-from fec_pipeline.raw_fec_config import DEFAULT_SCHEMA_PATH, load_raw_fec_model_config, repo_root
+from fec_pipeline.etl_config import DEFAULT_ETL_CONFIG_PATH, load_etl_model_config, repo_root
 
 
 @dataclass(frozen=True)
@@ -84,8 +86,23 @@ def table_exists(conn: duckdb.DuckDBPyConnection, schema: str, table: str) -> bo
     return bool(row and row[0] > 0)
 
 
+def drop_legacy_duckdb_metadata_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    """Drop legacy metadata/QA tables from DuckDB now managed in SQLite."""
+
+    rows = conn.execute(
+        """
+        SELECT table_schema, table_name
+        FROM information_schema.tables
+        WHERE table_schema IN ('etl', 'review')
+        """
+    ).fetchall()
+
+    for schema, table in rows:
+        conn.execute(f"DROP TABLE IF EXISTS {schema}.{table}")
+
+
 def latest_loaded_hash(
-    conn: duckdb.DuckDBPyConnection,
+    conn: sqlite3.Connection,
     cycle: int,
     table: str,
     target_table: str,
@@ -96,7 +113,7 @@ def latest_loaded_hash(
     row = conn.execute(
         """
         SELECT source_file_hash
-        FROM etl.load_history
+        FROM etl_load_history
         WHERE cycle = ?
           AND table_name = ?
           AND target_table_name = ?
@@ -114,7 +131,7 @@ def latest_loaded_hash(
 
 
 def upsert_current_state_success(
-    conn: duckdb.DuckDBPyConnection,
+    conn: sqlite3.Connection,
     cycle: int,
     table: str,
     zip_name: str,
@@ -128,7 +145,7 @@ def upsert_current_state_success(
 
     conn.execute(
         """
-        DELETE FROM etl.current_state
+                DELETE FROM etl_current_state
         WHERE entity_type = 'table'
           AND cycle = ?
           AND table_name = ?
@@ -138,7 +155,7 @@ def upsert_current_state_success(
 
     conn.execute(
         """
-        INSERT INTO etl.current_state (
+        INSERT INTO etl_current_state (
             state_id,
             entity_type,
             cycle,
@@ -162,7 +179,7 @@ def upsert_current_state_success(
             updated_at
         )
         SELECT
-            COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1),
+            COALESCE((SELECT MAX(state_id) + 1 FROM etl_current_state), 1),
             'table',
             ?,
             ?,
@@ -182,7 +199,7 @@ def upsert_current_state_success(
             NULL,
             NULL,
             NULL,
-            NOW()
+            CURRENT_TIMESTAMP
         """,
         [
             cycle,
@@ -195,10 +212,11 @@ def upsert_current_state_success(
             duration_ms,
         ],
     )
+    conn.commit()
 
 
 def upsert_current_state_failure(
-    conn: duckdb.DuckDBPyConnection,
+    conn: sqlite3.Connection,
     cycle: int,
     table: str,
     zip_name: str,
@@ -212,7 +230,7 @@ def upsert_current_state_failure(
 
     conn.execute(
         """
-        DELETE FROM etl.current_state
+                DELETE FROM etl_current_state
         WHERE entity_type = 'table'
           AND cycle = ?
           AND table_name = ?
@@ -222,7 +240,7 @@ def upsert_current_state_failure(
 
     conn.execute(
         """
-        INSERT INTO etl.current_state (
+        INSERT INTO etl_current_state (
             state_id,
             entity_type,
             cycle,
@@ -246,7 +264,7 @@ def upsert_current_state_failure(
             updated_at
         )
         SELECT
-            COALESCE((SELECT MAX(state_id) + 1 FROM etl.current_state), 1),
+            COALESCE((SELECT MAX(state_id) + 1 FROM etl_current_state), 1),
             'table',
             ?,
             ?,
@@ -266,7 +284,7 @@ def upsert_current_state_failure(
             NULL,
             NULL,
             ?,
-            NOW()
+            CURRENT_TIMESTAMP
         """,
         [
             cycle,
@@ -279,10 +297,11 @@ def upsert_current_state_failure(
             error_text,
         ],
     )
+    conn.commit()
 
 
 def insert_load_history(
-    conn: duckdb.DuckDBPyConnection,
+    conn: sqlite3.Connection,
     cycle: int,
     table: str,
     source_zip_path: str,
@@ -296,7 +315,7 @@ def insert_load_history(
 
     conn.execute(
         """
-        INSERT INTO etl.load_history (
+        INSERT INTO etl_load_history (
             load_id,
             cycle,
             table_name,
@@ -309,7 +328,7 @@ def insert_load_history(
             loaded_at
         )
         SELECT
-            COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1),
+            COALESCE((SELECT MAX(load_id) + 1 FROM etl_load_history), 1),
             ?,
             ?,
             ?,
@@ -318,7 +337,7 @@ def insert_load_history(
             ?,
             ?,
             ?,
-            NOW()
+            CURRENT_TIMESTAMP
         """,
         [
             cycle,
@@ -331,14 +350,15 @@ def insert_load_history(
             duration_ms,
         ],
     )
+    conn.commit()
 
 
 def resolve_targets(cycle: int, selected_tables: list[str], root: Path) -> list[LoadTarget]:
     """Resolve table metadata and local file paths for this load run."""
 
     cycle_suffix = str(cycle)[-2:]
-    schema_path = root / DEFAULT_SCHEMA_PATH
-    configs = load_raw_fec_model_config(schema_path, cycle_suffix=cycle_suffix)
+    config_path = root / DEFAULT_ETL_CONFIG_PATH
+    configs = load_etl_model_config(config_path, cycle_suffix=cycle_suffix)
     config_by_name = {item.name: item for item in configs}
 
     cycle_dir = root / "data" / str(cycle)
@@ -368,6 +388,44 @@ def resolve_targets(cycle: int, selected_tables: list[str], root: Path) -> list[
     return targets
 
 
+def infer_cycles_from_data(root: Path) -> list[int]:
+    """Infer cycle years from downloaded ZIP layout under data/<cycle>/."""
+
+    data_dir = root / "data"
+    if not data_dir.exists():
+        return []
+
+    cycles: list[int] = []
+    for child in data_dir.iterdir():
+        if not child.is_dir() or not child.name.isdigit() or len(child.name) != 4:
+            continue
+
+        cycle = int(child.name)
+        cycle_suffix = child.name[-2:]
+        has_matching_zip = any(
+            item.is_file() and re.match(rf"^[a-z0-9_]+{cycle_suffix}\.zip$", item.name)
+            for item in child.iterdir()
+        )
+        if has_matching_zip:
+            cycles.append(cycle)
+
+    return sorted(cycles)
+
+
+def infer_tables_for_cycle(cycle: int, root: Path, default_tables: list[str]) -> list[str]:
+    """Infer tables by checking which expected ZIP files exist for a cycle."""
+
+    cycle_suffix = str(cycle)[-2:]
+    cycle_dir = root / "data" / str(cycle)
+    inferred: list[str] = []
+
+    for table in default_tables:
+        if (cycle_dir / f"{table}{cycle_suffix}.zip").exists():
+            inferred.append(table)
+
+    return inferred
+
+
 def extract_source_entry(zip_path: Path, source_entry: str, extract_root: Path) -> Path:
     """Extract one source entry from one ZIP archive and return the file path."""
 
@@ -390,13 +448,18 @@ def extract_source_entry(zip_path: Path, source_entry: str, extract_root: Path) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Load FEC ZIP files into DuckDB raw_fec tables.")
-    parser.add_argument("--cycle", required=True, type=int, help="Election cycle year (for example: 2026)")
+    parser.add_argument("--cycle", type=int, help="Election cycle year (for example: 2026)")
     parser.add_argument(
         "--tables",
         nargs="*",
         help="Optional table list (comma-separated or repeated names): cm cn indiv",
     )
     parser.add_argument("--db-path", default="db/fec.duckdb", help="DuckDB file path")
+    parser.add_argument(
+        "--metadata-db-path",
+        default="db/fec-metadata.sqlite",
+        help="SQLite metadata database path",
+    )
     parser.add_argument(
         "--schema-sql",
         default="sql/schema/001_create_fec_schemas.sql",
@@ -409,20 +472,24 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.cycle % 2 != 0:
+    root = repo_root()
+
+    if args.cycle is not None and args.cycle % 2 != 0:
         raise SystemExit(f"Cycle must be an even election year: {args.cycle}")
 
-    root = repo_root()
-    cycle_suffix = str(args.cycle)[-2:]
-    configs = load_raw_fec_model_config(root / DEFAULT_SCHEMA_PATH, cycle_suffix=cycle_suffix)
-    default_tables = [item.name for item in configs]
-    selected_tables = normalize_tables(args.tables, default_tables)
-    targets = resolve_targets(args.cycle, selected_tables, root)
+    cycles = [args.cycle] if args.cycle is not None else infer_cycles_from_data(root)
+    if not cycles:
+        raise SystemExit("No cycles could be inferred from downloaded ZIPs under data/<cycle>/. Use --cycle.")
 
     db_path = Path(args.db_path)
     if not db_path.is_absolute():
         db_path = root / db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    metadata_db_path = Path(args.metadata_db_path)
+    if not metadata_db_path.is_absolute():
+        metadata_db_path = root / metadata_db_path
+    metadata_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     schema_sql_path = Path(args.schema_sql)
     if not schema_sql_path.is_absolute():
@@ -430,123 +497,165 @@ def main() -> None:
     if not schema_sql_path.exists():
         raise SystemExit(f"Schema SQL not found: {schema_sql_path}")
 
+    metadata_schema_sql_path = root / "sql" / "schema" / "001_create_metadata_sqlite.sql"
+    if not metadata_schema_sql_path.exists():
+        raise SystemExit(f"Metadata schema SQL not found: {metadata_schema_sql_path}")
+
     extract_root = root / "tmp" / "load-fec"
     extract_root.mkdir(parents=True, exist_ok=True)
 
     conn = duckdb.connect(str(db_path))
+    metadata_conn = sqlite3.connect(str(metadata_db_path))
     try:
         conn.execute(schema_sql_path.read_text(encoding="utf-8"))
+        drop_legacy_duckdb_metadata_tables(conn)
+        metadata_conn.executescript(metadata_schema_sql_path.read_text(encoding="utf-8"))
+        metadata_conn.commit()
 
-        total = len(targets)
-        loaded_count = 0
-        skipped_count = 0
-        failed_count = 0
+        total_loaded = 0
+        total_skipped = 0
+        total_failed = 0
+        total_targets = 0
 
-        for index, target in enumerate(targets, start=1):
-            zip_name = target.zip_path.name
-            print(f"[{index}/{total}] Processing {zip_name}...", flush=True)
-
-            if not target.zip_path.exists():
-                print(f"Warning: ZIP not found, skipping: {target.zip_path}", flush=True)
-                skipped_count += 1
-                continue
-
-            if not target.transform_sql_path.exists():
-                failed_count += 1
-                print(f"Error: load SQL template not found: {target.transform_sql_path}", flush=True)
-                continue
-
-            start = time.perf_counter()
-            source_zip_path = target.zip_path.as_posix()
-            source_hash = file_sha256(target.zip_path)
-
-            table_name_only = target.target_table.split(".", 1)[1]
-            if not args.force and table_exists(conn, "raw_fec", table_name_only):
-                previous_hash = latest_loaded_hash(
-                    conn,
-                    cycle=args.cycle,
-                    table=target.table,
-                    target_table=target.target_table,
-                    source_zip_path=source_zip_path,
-                )
-                if previous_hash == source_hash:
-                    skipped_count += 1
-                    print(
-                        f"[{index}/{total}] Skipped {zip_name}; unchanged source hash for {target.target_table}",
-                        flush=True,
-                    )
-                    continue
-
-            extracted_source = extract_source_entry(target.zip_path, target.source_entry, extract_root)
-            source_path = extracted_source.as_posix()
-            template = target.transform_sql_path.read_text(encoding="utf-8")
-            load_sql = render_template(
-                template,
-                {
-                    "{TARGET_TABLE}": target.target_table,
-                    "{SOURCE_PATH}": source_path.replace("'", "''"),
-                    "{CYCLE}": str(args.cycle),
-                    "{TABLE_NAME}": target.table,
-                    "{ZIP_PATH}": source_zip_path.replace("'", "''"),
-                    "{ENTRY_NAME_SQL}": quote_sql(target.source_entry),
-                },
+        for cycle in cycles:
+            cycle_suffix = str(cycle)[-2:]
+            configs = load_etl_model_config(root / DEFAULT_ETL_CONFIG_PATH, cycle_suffix=cycle_suffix)
+            default_tables = [item.name for item in configs]
+            selected_tables = (
+                normalize_tables(args.tables, default_tables)
+                if args.tables
+                else infer_tables_for_cycle(cycle, root, default_tables)
             )
 
-            try:
-                conn.execute(load_sql)
-                row_count = conn.execute(f"SELECT COUNT(*) FROM {target.target_table}").fetchone()[0]
-                duration_ms = int((time.perf_counter() - start) * 1000)
+            if not selected_tables:
+                print(f"Cycle {cycle}: no table ZIPs inferred, skipping.", flush=True)
+                continue
 
-                # Some legacy SQL templates insert load_history; remove duplicates by writing history here only.
-                insert_load_history(
-                    conn,
-                    cycle=args.cycle,
-                    table=target.table,
-                    source_zip_path=source_zip_path,
-                    source_entry_name=target.source_entry,
-                    source_file_hash=source_hash,
-                    target_table=target.target_table,
-                    row_count=row_count,
-                    duration_ms=duration_ms,
-                )
-                upsert_current_state_success(
-                    conn,
-                    cycle=args.cycle,
-                    table=target.table,
-                    zip_name=zip_name,
-                    source_zip_path=source_zip_path,
-                    source_entry_name=target.source_entry,
-                    target_table=target.target_table,
-                    row_count=row_count,
-                    duration_ms=duration_ms,
+            print(f"Cycle {cycle}: loading tables {', '.join(selected_tables)}", flush=True)
+            targets = resolve_targets(cycle, selected_tables, root)
+            total = len(targets)
+            loaded_count = 0
+            skipped_count = 0
+            failed_count = 0
+
+            for index, target in enumerate(targets, start=1):
+                zip_name = target.zip_path.name
+                print(f"[{index}/{total}] Processing {zip_name}...", flush=True)
+
+                if not target.zip_path.exists():
+                    print(f"Warning: ZIP not found, skipping: {target.zip_path}", flush=True)
+                    skipped_count += 1
+                    continue
+
+                if not target.transform_sql_path.exists():
+                    failed_count += 1
+                    print(f"Error: load SQL template not found: {target.transform_sql_path}", flush=True)
+                    continue
+
+                start = time.perf_counter()
+                source_zip_path = target.zip_path.as_posix()
+                source_hash = file_sha256(target.zip_path)
+
+                table_name_only = target.target_table.split(".", 1)[1]
+                if not args.force and table_exists(conn, "raw_fec", table_name_only):
+                    previous_hash = latest_loaded_hash(
+                        metadata_conn,
+                        cycle=cycle,
+                        table=target.table,
+                        target_table=target.target_table,
+                        source_zip_path=source_zip_path,
+                    )
+                    if previous_hash == source_hash:
+                        skipped_count += 1
+                        print(
+                            f"[{index}/{total}] Skipped {zip_name}; unchanged source hash for {target.target_table}",
+                            flush=True,
+                        )
+                        continue
+
+                extracted_source = extract_source_entry(target.zip_path, target.source_entry, extract_root)
+                source_path = extracted_source.as_posix()
+                template = target.transform_sql_path.read_text(encoding="utf-8")
+                load_sql = render_template(
+                    template,
+                    {
+                        "{TARGET_TABLE}": target.target_table,
+                        "{SOURCE_PATH}": source_path.replace("'", "''"),
+                        "{CYCLE}": str(cycle),
+                        "{TABLE_NAME}": target.table,
+                        "{ZIP_PATH}": source_zip_path.replace("'", "''"),
+                        "{ENTRY_NAME_SQL}": quote_sql(target.source_entry),
+                    },
                 )
 
-                loaded_count += 1
-                print(f"[{index}/{total}] Loaded {zip_name} into {target.target_table}", flush=True)
-            except Exception as exc:  # noqa: BLE001 - report per-table failure and continue.
-                failed_count += 1
-                duration_ms = int((time.perf_counter() - start) * 1000)
-                upsert_current_state_failure(
-                    conn,
-                    cycle=args.cycle,
-                    table=target.table,
-                    zip_name=zip_name,
-                    source_zip_path=source_zip_path,
-                    source_entry_name=target.source_entry,
-                    target_table=target.target_table,
-                    duration_ms=duration_ms,
-                    error_text=str(exc),
-                )
-                print(f"Error loading {zip_name}: {exc}", flush=True)
+                try:
+                    conn.execute(load_sql)
+                    row_count = conn.execute(f"SELECT COUNT(*) FROM {target.target_table}").fetchone()[0]
+                    duration_ms = int((time.perf_counter() - start) * 1000)
+
+                    # Some legacy SQL templates insert load_history; remove duplicates by writing history here only.
+                    insert_load_history(
+                        metadata_conn,
+                        cycle=cycle,
+                        table=target.table,
+                        source_zip_path=source_zip_path,
+                        source_entry_name=target.source_entry,
+                        source_file_hash=source_hash,
+                        target_table=target.target_table,
+                        row_count=row_count,
+                        duration_ms=duration_ms,
+                    )
+                    upsert_current_state_success(
+                        metadata_conn,
+                        cycle=cycle,
+                        table=target.table,
+                        zip_name=zip_name,
+                        source_zip_path=source_zip_path,
+                        source_entry_name=target.source_entry,
+                        target_table=target.target_table,
+                        row_count=row_count,
+                        duration_ms=duration_ms,
+                    )
+
+                    loaded_count += 1
+                    print(f"[{index}/{total}] Loaded {zip_name} into {target.target_table}", flush=True)
+                except Exception as exc:  # noqa: BLE001 - report per-table failure and continue.
+                    failed_count += 1
+                    duration_ms = int((time.perf_counter() - start) * 1000)
+                    upsert_current_state_failure(
+                        metadata_conn,
+                        cycle=cycle,
+                        table=target.table,
+                        zip_name=zip_name,
+                        source_zip_path=source_zip_path,
+                        source_entry_name=target.source_entry,
+                        target_table=target.target_table,
+                        duration_ms=duration_ms,
+                        error_text=str(exc),
+                    )
+                    print(f"Error loading {zip_name}: {exc}", flush=True)
+
+            print(
+                f"Load summary for {cycle}: loaded {loaded_count}, skipped {skipped_count}, "
+                f"failed {failed_count}, total {total}.",
+                flush=True,
+            )
+
+            total_loaded += loaded_count
+            total_skipped += skipped_count
+            total_failed += failed_count
+            total_targets += total
 
         print(
-            f"Load summary for {args.cycle}: loaded {loaded_count}, skipped {skipped_count}, "
-            f"failed {failed_count}, total {total}.",
+            f"Overall load summary: loaded {total_loaded}, skipped {total_skipped}, "
+            f"failed {total_failed}, total {total_targets}.",
             flush=True,
         )
-        if failed_count > 0:
+
+        if total_failed > 0:
             raise SystemExit(1)
     finally:
+        metadata_conn.close()
         conn.close()
 
 

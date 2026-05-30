@@ -1,0 +1,30 @@
+name: "fec_data"
+version: "0.1.0"
+config-version: 2
+
+# dbt looks for a matching profile in profiles.yml. Keeping profiles.yml in
+# this repo lets new users run with `--profiles-dir .` instead of editing home
+# directory config.
+profile: "fec_data"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # The cycle is passed to both the downloader and dbt. Override it with:
+  #   uv run dbt run --vars "{cycle: 2024}"
+  cycle: 2026
+
+on-run-start:
+  # zipfs lets DuckDB read the pipe-delimited text file inside each ZIP via
+  # zip://... paths. Install is idempotent; LOAD makes it available in-session.
+  - "INSTALL zipfs FROM community"
+  - "LOAD zipfs"
+
+models:
+  fec_data:
+    raw_fec:
+      +schema: raw_fec
+      +materialized: table

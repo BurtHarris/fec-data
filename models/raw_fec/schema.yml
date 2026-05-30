@@ -1,0 +1,61 @@
+version: 2
+
+models:
+  - name: ccl
+    description: "Candidate committee linkage file loaded from the FEC bulk ZIP."
+    columns:
+      - name: CAND_ID
+        tests: [not_null]
+      - name: CMTE_ID
+        tests: [not_null]
+
+  - name: cm
+    description: "Committee master file loaded from the FEC bulk ZIP."
+    columns:
+      - name: CMTE_ID
+        tests: [not_null, unique]
+
+  - name: cn
+    description: "Candidate master file loaded from the FEC bulk ZIP."
+    columns:
+      - name: CAND_ID
+        tests: [not_null, unique]
+
+  - name: indiv
+    description: "Individual contributions loaded from the FEC bulk ZIP."
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+      - name: CMTE_ID
+        tests: [not_null]
+
+  - name: oppexp
+    description: "Operating expenditures loaded from the FEC bulk ZIP."
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+
+  - name: oth
+    description: "Other committee transactions loaded from the FEC bulk ZIP."
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+
+  - name: pas2
+    description: "Contributions to candidates from committees loaded from the FEC bulk ZIP."
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+      - name: CAND_ID
+        tests:
+          - not_null:
+              # The 2026 file currently contains some rows without CAND_ID.
+              # Keep this visible, but do not fail the whole local load.
+              config:
+                severity: warn
+
+  - name: weball
+    description: "Candidate summary file loaded from the FEC bulk ZIP."
+    columns:
+      - name: CAND_ID
+        tests: [not_null]

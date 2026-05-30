@@ -96,6 +96,47 @@ The configuration installs:
 
 ## Quick Start
 
+### Option A: dbt + DuckDB workflow
+
+This is the recommended migration path away from PowerShell orchestration. The
+Python downloader caches source ZIPs, and dbt builds DuckDB tables from those
+ZIPs.
+
+1. Install the Python/dbt environment:
+
+```powershell
+uv sync
+```
+
+2. Download a cycle:
+
+```powershell
+uv run fec-download 2026
+```
+
+You can limit the run while learning:
+
+```powershell
+uv run fec-download 2026 cm cn --parallelism 2
+```
+
+3. Build DuckDB tables with dbt:
+
+```powershell
+uv run dbt run --profiles-dir . --vars "{cycle: 2026}"
+```
+
+4. Run the starter dbt tests:
+
+```powershell
+uv run dbt test --profiles-dir . --vars "{cycle: 2026}"
+```
+
+The dbt models live in `models/raw_fec/`. Each model reads one FEC ZIP entry and
+materializes a table such as `raw_fec.cm_2026` in `db/fec.duckdb`.
+
+### Option B: legacy PowerShell workflow
+
 1. Create the DuckDB file:
 
 ```powershell

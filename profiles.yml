@@ -1,0 +1,8 @@
+fec_data:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Relative paths are resolved from the dbt invocation directory.
+      path: "db/fec.duckdb"
+      threads: 4

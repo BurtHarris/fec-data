@@ -1,0 +1,57 @@
+{{ config(alias=fec_table_alias('indiv')) }}
+
+-- Individual contributions use itcont.txt inside indivYY.zip.
+select
+    CMTE_ID,
+    AMNDT_IND,
+    RPT_TP,
+    TRANSACTION_PGI,
+    IMAGE_NUM,
+    TRANSACTION_TP,
+    ENTITY_TP,
+    NAME,
+    CITY,
+    STATE,
+    ZIP_CODE,
+    EMPLOYER,
+    OCCUPATION,
+    cast(try_strptime(nullif(trim(TRANSACTION_DT), ''), '%m%d%Y') as date) as TRANSACTION_DT,
+    try_cast(nullif(trim(TRANSACTION_AMT), '') as decimal(14,2)) as TRANSACTION_AMT,
+    OTHER_ID,
+    TRAN_ID,
+    try_cast(nullif(trim(FILE_NUM), '') as bigint) as FILE_NUM,
+    MEMO_CD,
+    MEMO_TEXT,
+    try_cast(nullif(trim(SUB_ID), '') as bigint) as SUB_ID
+from read_csv(
+    '{{ fec_source_path("indiv", "itcont.txt") }}',
+    delim='|',
+    header=false,
+    all_varchar=true,
+    null_padding=true,
+    ignore_errors=true,
+    sample_size=-1,
+    columns={
+        'CMTE_ID':'VARCHAR',
+        'AMNDT_IND':'VARCHAR',
+        'RPT_TP':'VARCHAR',
+        'TRANSACTION_PGI':'VARCHAR',
+        'IMAGE_NUM':'VARCHAR',
+        'TRANSACTION_TP':'VARCHAR',
+        'ENTITY_TP':'VARCHAR',
+        'NAME':'VARCHAR',
+        'CITY':'VARCHAR',
+        'STATE':'VARCHAR',
+        'ZIP_CODE':'VARCHAR',
+        'EMPLOYER':'VARCHAR',
+        'OCCUPATION':'VARCHAR',
+        'TRANSACTION_DT':'VARCHAR',
+        'TRANSACTION_AMT':'VARCHAR',
+        'OTHER_ID':'VARCHAR',
+        'TRAN_ID':'VARCHAR',
+        'FILE_NUM':'VARCHAR',
+        'MEMO_CD':'VARCHAR',
+        'MEMO_TEXT':'VARCHAR',
+        'SUB_ID':'VARCHAR'
+    }
+)

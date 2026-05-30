@@ -11,8 +11,7 @@ This file captures project-specific lessons learned so they are versioned with t
 
 ## DuckDB ZIP Loading Notes
 
-- DuckDB ZIP entry reads in this repo require the `zipfs` community extension (`INSTALL zipfs FROM community;` then `LOAD zipfs;`) before using `zip://` URIs.
-- Use canonical zipfs paths with forward slashes: `zip://E:/.../archive.zip/entry.txt`.
+- The Python loader extracts each required ZIP entry to `tmp/load-fec/` before `read_csv`, so DuckDB `zipfs` is no longer required for raw loads.
 - Keep explicit table-to-entry ZIP mapping (for example, `ccl -> ccl.txt`, `indiv -> itcont.txt`) to avoid ambiguity, especially for multi-file archives like `indiv`.
 
 ## Metadata Modeling Decision

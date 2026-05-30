@@ -171,41 +171,40 @@ uv run dbt seed --profiles-dir . --select review --full-refresh
 For example, the broad `pas2.CAND_ID` null warning is linked to a narrower
 `MENENDEZ FOR CONGRESS` duplicate-candidate-ID investigation.
 
-### Option B: legacy PowerShell workflow
+### Option B: Python CLI raw loader (no dbt run required)
 
-1. Create the DuckDB file:
+Use this when you want direct raw table loads from downloaded ZIPs into
+`raw_fec.<table>_<cycle>`.
+
+1. Download source ZIPs for the cycle:
 
 ```powershell
-duckdb db/fec.duckdb ".databases"
+uv run download --cycles 2026
 ```
 
-2. Add schema SQL files in `sql/schema/`.
-
-3. Add a fetch script in `scripts/` (example command pattern):
+2. Load all configured raw tables for a cycle:
 
 ```powershell
-curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
+uv run load --cycle 2026
 ```
 
-For the FEC bulk downloader in PowerShell, which caches the raw ZIP artifacts for DuckDB to read directly:
+3. Load only selected tables:
 
 ```powershell
-.\scripts\fetch-bulk.ps1 2020
+uv run load --cycle 2026 --tables cm cn indiv
 ```
 
-To make the repo scripts callable by name from terminal, add the repo `scripts` folder to your PowerShell PATH:
+4. Force reload even when ZIP hashes are unchanged:
 
 ```powershell
-.\scripts\enable-fec-data-scripts.ps1 -Persist
+uv run load --cycle 2026 --tables cm --force
 ```
 
-That appends the repo `scripts` directory to your PowerShell profile PATH.
-
-4. Load and transform with DuckDB:
+The PowerShell entrypoint remains available for compatibility and delegates to
+the Python loader:
 
 ```powershell
-duckdb db/fec.duckdb -c ".read sql/schema/001_base_tables.sql"
-duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.sql"
+.\scripts\load-fec-duckdb.ps1 -Cycle 2026 -Tables cm
 ```
 
 ## Recommended Conventions
@@ -213,7 +212,7 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 - Keep raw source files immutable in `data/raw/`.
 - Manage and track downloaded ZIP files in `data/raw/`.
 - Write all transformations as SQL in `sql/transform/` when possible.
-- Use PowerShell for all project scripting and orchestration.
+- Use Python CLIs (`uv run ...`) for download/load orchestration; keep PowerShell wrappers as compatibility shims only.
 - Name SQL files with numeric prefixes for deterministic order:
   - `001_...sql`, `010_...sql`, `020_...sql`
 - Keep scripts idempotent so reruns are safe.
@@ -228,4 +227,4 @@ duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.s
 
 - Add the first source-specific downloader in `scripts/`.
 - Define base tables in `sql/schema/`.
-- Add one end-to-end PowerShell run script that calls fetch, then load, then QA checks.
+- Add one end-to-end Python run command that calls download, then load, then QA checks.

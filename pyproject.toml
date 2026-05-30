@@ -13,6 +13,10 @@ dependencies = [
 download = "fec_pipeline.download:main"
 # Backward-compatible alias.
 fec-download = "fec_pipeline.download:main"
+# Raw DuckDB loader.
+load = "fec_pipeline.load:main"
+# Backward-compatible alias.
+fec-load = "fec_pipeline.load:main"
 
 [tool.uv]
 package = true

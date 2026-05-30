@@ -18,5 +18,11 @@
             "attached": false
         }
     ],
-    "duckdb.defaultDatabase": "fec"
+    "duckdb.defaultDatabase": "fec",
+    "chat.tools.terminal.autoApprove": {
+        "/^uv run dbt test --profiles-dir \\. --vars \"\\{cycle: 2026\\}\" --select raw_fec$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }

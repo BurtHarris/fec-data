@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Copilot CLI Concepts Introduction</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0b1020;
+      --panel: #121a32;
+      --text: #e8ecff;
+      --muted: #a9b3d9;
+      --accent: #7aa2ff;
+      --ok: #79dba5;
+      --warn: #ffcb6b;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f7f9ff;
+        --panel: #ffffff;
+        --text: #1c2645;
+        --muted: #4f5b85;
+        --accent: #2654d8;
+        --line: #d9e0fb;
+        --ok: #0f8f54;
+        --warn: #9a6700;
+      }
+    }
+    body {
+      margin: 0;
+      font-family: Segoe UI, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 28px 20px 40px;
+    }
+    h1, h2, h3 { line-height: 1.2; margin: 0 0 10px; }
+    h1 { font-size: 1.9rem; margin-bottom: 6px; }
+    h2 { font-size: 1.35rem; margin-top: 28px; }
+    h3 { font-size: 1.05rem; margin-top: 16px; }
+    p { margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin: 12px 0;
+    }
+    code {
+      background: color-mix(in srgb, var(--panel) 85%, black 15%);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 5px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.93em;
+    }
+    pre {
+      margin: 10px 0 0;
+      background: color-mix(in srgb, var(--panel) 88%, black 12%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 0;
+      font-size: 0.95rem;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px 9px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: color-mix(in srgb, var(--panel) 78%, black 22%); }
+    .tag-ok { color: var(--ok); font-weight: 600; }
+    .tag-warn { color: var(--warn); font-weight: 600; }
+    ul { margin: 8px 0 10px 20px; padding: 0; }
+    li { margin: 4px 0; }
+    footer {
+      margin-top: 24px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Copilot CLI Concepts Introduction</h1>
+    <p class="muted">A practical architecture + terminology map for experienced developers.</p>
+
+    <section>
+      <h2>1) Plain-language introduction</h2>
+      <div class="panel">
+        <p><strong>Copilot CLI is an AI assistant that works inside your terminal.</strong> You type requests in normal language, it can inspect your project, run commands, edit files, and explain results.</p>
+        <p>Before the architecture view below, here are the three terms used most often:</p>
+        <ul>
+          <li><strong>Session:</strong> one work conversation with its own context and history.</li>
+          <li><strong>Agent:</strong> the AI assistant engine that plans and carries out steps.</li>
+          <li><strong>Runtime:</strong> the active setup the session is using (tools, permissions, and current state).</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2>2) Mental model</h2>
+      <div class="panel">
+        <p><strong>Inside a session, you interact through a conversation, and the agent carries out work steps using tools, instructions, and optional memory.</strong></p>
+        <pre><code>User
+  └─ Session (container)
+      ├─ Conversation (turns/messages)
+      ├─ Timeline (ordered events across work)
+      ├─ Tasks (agent jobs, subagents, shell commands)
+      ├─ Workspace (session files, plan artifacts)
+      ├─ Capabilities
+      │   ├─ Tools
+      │   ├─ Skills
+      │   ├─ Plugins
+      │   └─ Fleet mode (parallel subagents)
+      └─ Context layers
+          ├─ Instructions (repo/user policy)
+          ├─ Permissions
+          └─ Memory (cross-session, if enabled)</code></pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>3) Hierarchy and definitions</h2>
+
+      <h3>Session (top-level container)</h3>
+      <ul>
+        <li><strong>What it is:</strong> the boundary for one work conversation.</li>
+        <li><strong>Contains:</strong> conversation, timeline, tasks, workspace artifacts, usage counters, and active state.</li>
+        <li><strong>Typical commands:</strong> <code>/new</code>, <code>/resume</code>, <code>/session</code>, <code>/clear</code>.</li>
+      </ul>
+
+      <h3>Conversation (inside session)</h3>
+      <ul>
+        <li><strong>What it is:</strong> prompt/response turns.</li>
+        <li><strong>Contains:</strong> user asks, assistant replies, and attached context references.</li>
+      </ul>
+
+      <h3>Timeline (inside session)</h3>
+      <ul>
+        <li><strong>What it is:</strong> chronological events for work execution.</li>
+        <li><strong>Contains:</strong> turn events, tool calls, task updates, status transitions.</li>
+      </ul>
+
+      <h3>Tasks (inside session)</h3>
+      <ul>
+        <li><strong>What it is:</strong> executable units of work.</li>
+        <li><strong>Contains:</strong> subagent jobs, shell/background commands, task output/status.</li>
+        <li><strong>Related:</strong> <code>/tasks</code>, <code>/fleet</code>.</li>
+      </ul>
+
+      <h3>Capabilities layer (inside session)</h3>
+      <ul>
+        <li><strong>Tools:</strong> primitive actions (read/edit files, run commands, search, fetch).</li>
+        <li><strong>Skills:</strong> packaged higher-level workflows with a known interface.</li>
+        <li><strong>Plugins:</strong> extensibility integrations managed via <code>/plugin</code>.</li>
+        <li><strong>Fleet mode:</strong> parallel subagent execution strategy.</li>
+      </ul>
+
+      <h3>Context/governance layer (applies to session behavior)</h3>
+      <ul>
+        <li><strong>Instructions:</strong> policy and behavior constraints from repo/user instruction files.</li>
+        <li><strong>Permissions:</strong> what tools/paths/URLs are allowed.</li>
+        <li><strong>Memory:</strong> reusable facts/preferences across sessions when enabled.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>4) Persistence map (where things live)</h2>
+      <div class="panel">
+        <table>
+          <thead>
+            <tr>
+              <th>Concept</th>
+              <th>Scope</th>
+              <th>Typical persistence</th>
+              <th>Examples</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Session metadata</td>
+              <td>Session</td>
+              <td>Service-backed session record + local active state</td>
+              <td>ID, name, usage, cwd</td>
+            </tr>
+            <tr>
+              <td>Conversation/timeline events</td>
+              <td>Session</td>
+              <td><span class="tag-ok">Local</span> session-state files + session history backing</td>
+              <td><code>...session-state\&lt;id&gt;\events.jsonl</code></td>
+            </tr>
+            <tr>
+              <td>Session workspace artifacts</td>
+              <td>Session</td>
+              <td><span class="tag-ok">Local</span> per-session folder</td>
+              <td><code>...session-state\&lt;id&gt;\plan.md</code></td>
+            </tr>
+            <tr>
+              <td>Runtime process logs</td>
+              <td>Process</td>
+              <td><span class="tag-ok">Local</span> diagnostic logs</td>
+              <td><code>...\.copilot\logs\process-*.log</code></td>
+            </tr>
+            <tr>
+              <td>Instructions</td>
+              <td>Repo/User</td>
+              <td><span class="tag-ok">Local files</span></td>
+              <td><code>.github/copilot-instructions.md</code>, <code>~/.copilot/...</code></td>
+            </tr>
+            <tr>
+              <td>Memory</td>
+              <td>User or Repository</td>
+              <td><span class="tag-warn">Cloud/account-level</span> (when enabled)</td>
+              <td>Cross-session preferences and facts</td>
+            </tr>
+            <tr>
+              <td>Plugins/skills config</td>
+              <td>User/Environment</td>
+              <td>CLI config (often local), with possible provider-side data</td>
+              <td><code>/plugin</code>, <code>/skills</code> registrations</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>5) Operational semantics: <code>/new</code> vs <code>/clear</code></h2>
+      <div class="panel">
+        <ul>
+          <li><code>/new</code>: start a <strong>new session</strong> and switch to it. Prior session remains resumable.</li>
+          <li><code>/clear</code>: abandon current conversation context and start fresh <strong>in place</strong>.</li>
+          <li><code>/resume</code>: switch to an existing session.</li>
+          <li><code>/rewind</code>/<code>/undo</code>: remove last turn and revert its file edits.</li>
+          <li><code>/session</code>: inspect/manage sessions (list/details/delete depending on version).</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      Output this as a single self-contained <code>.html</code> file I can open in a browser. No external dependencies.
+    </footer>
+  </main>
+</body>
+</html>

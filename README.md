@@ -60,6 +60,18 @@ fec-data/
 
 Note: `data/`, local `db/` artifacts, `logs/`, and `tmp/` are intended for local runtime files and are git-ignored via `.gitignore` (folder placeholders are kept with `.gitkeep`).
 
+## HTML Artifact Preview
+
+This repo keeps several committed, self-contained HTML artifacts under `artifacts/` for analysis notes, diagrams, reviews, and reports. For this project, the recommended in-editor preview workflow is the official VS Code Live Preview extension (`ms-vscode.live-server`), which is listed in the workspace recommendations.
+
+Use it when you want to inspect files like `artifacts/analysis/*.html` without leaving VS Code:
+
+1. Open an HTML artifact file.
+2. Run `Live Preview: Show Preview` from the Command Palette.
+3. Keep the preview beside the editor while you iterate on the file.
+
+For a final rendering check, open the same file in your normal browser as well.
+
 ## Prerequisites (Windows)
 
 Install:

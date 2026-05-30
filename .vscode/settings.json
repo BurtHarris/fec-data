@@ -1,10 +1,9 @@
 {
     "workbench.editorAssociations": {
         "*.copilotmd": "vscode.markdown.preview.editor",
-        "*.parquet": "duckdb.dataFileViewer",
-        "*.csv": "duckdb.dataFileViewer",
-        "*.tsv": "duckdb.dataFileViewer",
-        "*.xlsx": "duckdb.dataFileViewer"
+        "*.parquet": "duckdb.parquetViewer",
+        "*.csv": "duckdb.csvViewer",
+        "*.tsv": "duckdb.csvViewer"
     },
     "terminal.integrated.env.windows": {
         "PATH": "${workspaceFolder}\\scripts;${env:PATH}"

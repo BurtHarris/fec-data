@@ -16,7 +16,7 @@ select
     CAND_ST2,
     CAND_CITY,
     CAND_ST,
-    CAND_ZIP
+    nullif(substr(trim(CAND_ZIP), 1, 5), '') as CAND_ZIP
 from read_csv(
     '{{ fec_source_path("cn", "cn.txt") }}',
     delim='|',

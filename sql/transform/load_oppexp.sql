@@ -1,4 +1,3 @@
-LOAD zipfs;
 DROP TABLE IF EXISTS {TARGET_TABLE};
 CREATE TABLE {TARGET_TABLE} AS
 SELECT
@@ -13,7 +12,7 @@ SELECT
     NAME,
     CITY,
     STATE,
-    ZIP_CODE,
+    NULLIF(SUBSTR(TRIM(ZIP_CODE), 1, 5), '') AS ZIP_CODE,
     CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
     TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
     TRANSACTION_PGI,
@@ -63,23 +62,3 @@ FROM read_csv(
         'BACK_REF_TRAN_ID':'VARCHAR'
     }
 );
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1),
-    {CYCLE},
-    '{TABLE_NAME}',
-    '{ZIP_PATH}',
-    {ENTRY_NAME_SQL},
-    '{TARGET_TABLE}',
-    (SELECT COUNT(*) FROM {TARGET_TABLE}),
-    NOW();

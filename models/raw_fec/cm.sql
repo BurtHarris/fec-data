@@ -9,7 +9,7 @@ select
     CMTE_ST2,
     CMTE_CITY,
     CMTE_ST,
-    CMTE_ZIP,
+    nullif(substr(trim(CMTE_ZIP), 1, 5), '') as CMTE_ZIP,
     CMTE_DSGN,
     CMTE_TP,
     CMTE_PTY_AFFILIATION,

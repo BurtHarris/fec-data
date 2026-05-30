@@ -1,4 +1,3 @@
-LOAD zipfs;
 DROP TABLE IF EXISTS {TARGET_TABLE};
 CREATE TABLE {TARGET_TABLE} AS
 SELECT
@@ -9,7 +8,7 @@ SELECT
     CMTE_ST2,
     CMTE_CITY,
     CMTE_ST,
-    CMTE_ZIP,
+    NULLIF(SUBSTR(TRIM(CMTE_ZIP), 1, 5), '') AS CMTE_ZIP,
     CMTE_DSGN,
     CMTE_TP,
     CMTE_PTY_AFFILIATION,
@@ -43,23 +42,3 @@ FROM read_csv(
         'CAND_ID':'VARCHAR'
     }
 );
-
-INSERT INTO etl.load_history (
-    load_id,
-    cycle,
-    table_name,
-    source_zip_path,
-    source_entry_name,
-    target_table_name,
-    row_count,
-    loaded_at
-)
-SELECT
-    COALESCE((SELECT MAX(load_id) + 1 FROM etl.load_history), 1),
-    {CYCLE},
-    '{TABLE_NAME}',
-    '{ZIP_PATH}',
-    {ENTRY_NAME_SQL},
-    '{TARGET_TABLE}',
-    (SELECT COUNT(*) FROM {TARGET_TABLE}),
-    NOW();

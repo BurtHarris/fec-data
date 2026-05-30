@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS etl.load_history (
     table_name VARCHAR,
     source_zip_path VARCHAR,
     source_entry_name VARCHAR,
+    source_file_hash VARCHAR,
     target_table_name VARCHAR,
     row_count BIGINT,
     duration_ms BIGINT,

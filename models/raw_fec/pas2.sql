@@ -12,7 +12,7 @@ select
     NAME,
     CITY,
     STATE,
-    ZIP_CODE,
+    nullif(substr(trim(ZIP_CODE), 1, 5), '') as ZIP_CODE,
     EMPLOYER,
     OCCUPATION,
     cast(try_strptime(nullif(trim(TRANSACTION_DT), ''), '%m%d%Y') as date) as TRANSACTION_DT,

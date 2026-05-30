@@ -14,7 +14,7 @@ select
     NAME,
     CITY,
     STATE,
-    ZIP_CODE,
+    nullif(substr(trim(ZIP_CODE), 1, 5), '') as ZIP_CODE,
     cast(try_strptime(nullif(trim(TRANSACTION_DT), ''), '%m%d%Y') as date) as TRANSACTION_DT,
     try_cast(nullif(trim(TRANSACTION_AMT), '') as decimal(14,2)) as TRANSACTION_AMT,
     TRANSACTION_PGI,

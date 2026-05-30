@@ -135,6 +135,28 @@ uv run dbt test --profiles-dir . --vars "{cycle: 2026}"
 The dbt models live in `models/raw_fec/`. Each model reads one FEC ZIP entry and
 materializes a table such as `raw_fec.cm_2026` in `db/fec.duckdb`.
 
+### Review Notes for Known Data Issues
+
+Human investigation notes live in the `review` schema. Use these tables when a
+test failure or unusual report needs context that should survive reloads:
+
+- `review.issue` stores the main issue or anomaly.
+- `review.issue_relationship` links broad findings to narrower explanations.
+- `review.issue_entity` attaches committees, candidates, transactions, columns,
+  and rows to an issue.
+- `review.issue_evidence` stores query results, analyst notes, and source links.
+- `review.issue_decision` records why an issue was accepted, reopened, or closed.
+- `review.issue_metric` keeps measured counts and amounts for comparison over time.
+
+Load the starter review records with:
+
+```powershell
+uv run dbt seed --profiles-dir . --select review --full-refresh
+```
+
+For example, the broad `pas2.CAND_ID` null warning is linked to a narrower
+`MENENDEZ FOR CONGRESS` duplicate-candidate-ID investigation.
+
 ### Option B: legacy PowerShell workflow
 
 1. Create the DuckDB file:

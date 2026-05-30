@@ -1,0 +1,2 @@
+relationship_id,from_issue_id,to_issue_id,relationship_type,relationship_note,created_at
+1,2,1,explains_part_of,The Menendez duplicate candidate linkage explains two of the pas2 rows where CAND_ID is null.,2026-05-29 17:10:00

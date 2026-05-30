@@ -1,0 +1,8 @@
+issue_entity_id,issue_id,entity_type,entity_id,entity_label,role,source_table,source_column,notes
+1,1,table,raw_fec.pas2_2026,pas2 2026 raw table,affected_table,raw_fec.pas2_2026,CAND_ID,dbt not_null test found 989 null CAND_ID rows.
+2,1,column,CAND_ID,Candidate ID,affected_column,raw_fec.pas2_2026,CAND_ID,Column is null for a small subset of pas2 records.
+3,2,committee,C00799767,MENENDEZ FOR CONGRESS,recipient_committee,raw_fec.pas2_2026,OTHER_ID,OTHER_ID on affected rows points to this committee.
+4,2,candidate,H2NJ08232,MENENDEZ ROBERT,ambiguous_candidate,raw_fec.ccl_2026,CAND_ID,One active/current candidate linkage for C00799767.
+5,2,candidate,H2NJ13075,MENENDEZ ROBERT,ambiguous_candidate,raw_fec.ccl_2026,CAND_ID,Second active/current candidate linkage for C00799767.
+6,2,transaction,4040820261435319057,JUNTOS PAC to MENENDEZ FOR CONGRESS,affected_row,raw_fec.pas2_2026,SUB_ID,Transaction amount 5000.00 dated 2025-12-05.
+7,2,transaction,4040820261435319143,PRUDENTIAL FEDERAL PAC to MENENDEZ FOR CONGRESS,affected_row,raw_fec.pas2_2026,SUB_ID,Transaction amount 2500.00 dated 2026-03-25.

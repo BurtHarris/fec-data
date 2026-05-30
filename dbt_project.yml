@@ -9,6 +9,7 @@ profile: "fec_data"
 
 model-paths: ["models"]
 macro-paths: ["macros"]
+seed-paths: ["seeds"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
@@ -22,9 +23,16 @@ on-run-start:
   # zip://... paths. Install is idempotent; LOAD makes it available in-session.
   - "INSTALL zipfs FROM community"
   - "LOAD zipfs"
+  # The review schema stores human investigation notes and issue decisions.
+  - "CREATE SCHEMA IF NOT EXISTS review"
 
 models:
   fec_data:
     raw_fec:
       +schema: raw_fec
       +materialized: table
+
+seeds:
+  fec_data:
+    review:
+      +schema: review

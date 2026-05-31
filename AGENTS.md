@@ -15,3 +15,17 @@
 
 - Operational note:
   - Run the benchmark dbt leg with serial threading (`--dbt-threads 1`) to avoid out-of-memory conditions observed under concurrent fact-table builds.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repo's GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context layout rooted at `CONTEXT.md` and `docs/adr/` when those files exist. See `docs/agents/domain.md`.

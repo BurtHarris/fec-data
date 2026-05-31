@@ -35,6 +35,14 @@
 # Optional local environment files
 .env
 .env.*
+.venv/
+.user.yml
+__pycache__/
+*.pyc
 
 # Node dependencies
 node_modules/
+
+# dbt generated artifacts
+/target/
+/dbt_packages/

@@ -17,13 +17,12 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import yaml
-
 from pipeline.cli_common import validate_even_cycle
+from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, load_data_scope_config
 
 
 DEFAULT_TABLES = ("ccl", "cm", "cn", "indiv", "oppexp", "oth", "pas2", "weball")
-DEFAULT_COVERAGE_CONFIG = Path("config") / "fec_bulk_coverage.yml"
+DEFAULT_COVERAGE_CONFIG = CANONICAL_DATA_SCOPE_PATH
 
 
 @dataclass(frozen=True)
@@ -106,21 +105,6 @@ def year_range_values(year_range: tuple[int, int]) -> list[int]:
     start_year, end_year = year_range
     first = start_year if start_year % 2 == 0 else start_year + 1
     return list(range(first, end_year + 1, 2))
-
-
-def load_coverage_config(path: Path) -> dict[str, Any] | None:
-    """Read cycle coverage config; missing file means use built-in defaults."""
-
-    if not path.exists():
-        return None
-
-    with path.open("r", encoding="utf-8") as handle:
-        loaded = yaml.safe_load(handle) or {}
-
-    if not isinstance(loaded, dict):
-        raise SystemExit(f"Coverage config must be a mapping: {path}")
-
-    return loaded
 
 
 def normalize_group_tables(values: list[Any], context: str) -> list[str]:
@@ -314,7 +298,7 @@ def main() -> None:
     parser.add_argument(
         "--coverage-config",
         default=str(DEFAULT_COVERAGE_CONFIG),
-        help="Coverage YAML path used by default operation.",
+        help="Data Scope YAML path used by default operation.",
     )
     parser.add_argument(
         "--strict-coverage",
@@ -335,9 +319,7 @@ def main() -> None:
     config_path = Path(args.coverage_config)
     if not config_path.is_absolute():
         config_path = root / config_path
-    config = load_coverage_config(config_path)
-    if config is None:
-        raise SystemExit(f"Coverage config not found: {config_path}")
+    config = load_data_scope_config(config_path)
 
     if args.cycles:
         cycles = list(dict.fromkeys(args.cycles))

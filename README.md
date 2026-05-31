@@ -15,7 +15,7 @@ Developer notes: [docs/matt-pocock-skills.md](docs/matt-pocock-skills.md)
 
 Run from repository root:
 
-1. Review/edit `config/fec_bulk_coverage.yml` for the cycles/tables you want.
+1. Review/edit `config/data_scope.yml` for the cycles/tables you want.
 2. Run:
 
 ```powershell
@@ -80,6 +80,56 @@ This writes a JSON report to `tmp/html_link_check_artifacts.json` and exits non-
 ## CLI Commands
 
 The repository now standardizes on the dbt `zipfs` loader path.
+
+### Operations Web App (Local Shell)
+
+Run the internal operations web app shell in local-trusted mode:
+
+```powershell
+uv sync
+uv run ops-web
+```
+
+Open `http://127.0.0.1:8787` in your browser. The app binds to localhost by default.
+
+Optional development flags:
+
+```powershell
+uv run ops-web --reload
+uv run ops-web --host 127.0.0.1 --port 8787
+```
+
+Health check endpoint:
+
+```powershell
+curl http://127.0.0.1:8787/healthz
+```
+
+Run submission endpoint (allowlisted commands only):
+
+```powershell
+curl -X POST "http://127.0.0.1:8787/api/runs/submit" \
+	-H "Content-Type: application/json" \
+	-d '{"command":"fetch","operator_id":"local-operator","armed":true,"confirmed":true,"cycle":2026,"tables":["cm"],"force":false}'
+```
+
+Admission gates:
+
+- Only `fetch`, `load`, and `benchmark-load` are allowlisted.
+- Requests are rejected unless `armed=true` and `confirmed=true`.
+- Admission and launch outcomes are persisted to `db/ops_web.sqlite` (`command_run_log`).
+- Process output is written to `logs/ops-web/`.
+
+Run lock and lifecycle endpoints:
+
+```powershell
+curl "http://127.0.0.1:8787/api/runs/active"
+curl "http://127.0.0.1:8787/api/runs/<request_id>"
+curl -X POST "http://127.0.0.1:8787/api/runs/<request_id>/cancel"
+```
+
+Lifecycle states include `running`, `completed`, `failed`, `canceled`, and `rejected`.
+Only one workflow run can be active at a time; lock contention is persisted as a rejected run attempt.
 
 ### Performance Benchmark (Kept for Future Tests)
 

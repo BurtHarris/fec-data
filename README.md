@@ -9,12 +9,6 @@ Instead of relying on what political actors say, MoneyTrail makes it possible to
 Scope note: this setup is currently optimized for single-user local operation.
 Operational metadata and QA logs are stored in a local, single-user SQLite database.
 
-If you just want to run it:
-
-1. Review/edit the YAML config
-2. Download files
-3. Load DuckDB tables
-
 ## Simple Start
 
 Run from repository root:
@@ -25,7 +19,7 @@ Run from repository root:
 ```powershell
 uv sync
 uv run download --cycles 2026
-uv run load
+uv run load --cycle 2026
 ```
 
 That is the default workflow.
@@ -34,7 +28,7 @@ That is the default workflow.
 
 - ZIP files cached under `data/<cycle>/`
 - Raw tables in DuckDB such as `raw_fec.cm_2026`
-- Load metadata and QA logs in `db/fec-metadata.sqlite`
+- Benchmark outputs in `logs/load-timing/`
 
 Quick check:
 
@@ -65,126 +59,29 @@ This repo keeps committed, self-contained HTML artifacts under `artifacts/` for 
 
 For a final rendering check, open the same file in your normal browser as well.
 
-## Appendix: CLI Debug Options
+## CLI Commands
 
-Use these only when diagnosing issues.
+The repository now standardizes on the dbt `zipfs` loader path.
 
-### Downloader (`uv run download`)
-
-- Single cycle:
+### Performance Benchmark (Kept for Future Tests)
 
 ```powershell
-uv run download --cycles 2026
+uv run benchmark-load --cycle 2026 --tables indiv oppexp oth pas2 --warmup --dbt-threads 1
 ```
 
-- Specific tables only:
+This writes CSV results to `logs/load-timing/` and run artifacts to `tmp/benchmark-load/`.
 
-```powershell
-uv run download --cycles 2026 --tables cm cn indiv
-```
-
-- Force refresh:
-
-```powershell
-uv run download --cycles 2026 --force
-```
-
-- Lower concurrency to reduce network pressure:
-
-```powershell
-uv run download --cycles 2026 --parallelism 1
-```
-
-- More frequent progress output:
-
-```powershell
-uv run download --cycles 2026 --progress-interval 1.0
-```
-
-- Enforce configured coverage when debugging unusual cycle selections:
-
-```powershell
-uv run download --cycles 2030 --strict-coverage
-```
-
-### Loader (`uv run load`)
-
-- Load all configured raw models for one cycle via dbt zipfs:
-
-```powershell
-uv run load --cycle 2026
-```
-
-- Load one or more tables only:
-
-```powershell
-uv run load --cycle 2026 --tables cm cn
-```
-
-- Override dbt thread count for the loader:
-
-```powershell
-uv run load --cycle 2026 --tables indiv oppexp oth pas2 --dbt-threads 1
-```
-
-- Pass through additional dbt selectors if needed:
-
-```powershell
-uv run load --cycle 2026 --select state:modified+
-```
-
-- Use a custom dbt profiles directory:
-
-```powershell
-uv run load --cycle 2026 --profiles-dir .
-```
-
-- Note: loader execution now uses the dbt zipfs path rather than Python ZIP extraction.
-
-### Benchmark (`uv run benchmark-load`)
-
-- Benchmark dbt zipfs load performance for one cycle:
-
-```powershell
-uv run benchmark-load --cycle 2026
-```
-
-- Benchmark specific tables only:
-
-```powershell
-uv run benchmark-load --cycle 2026 --tables indiv oppexp oth pas2
-```
-
-- Add a warm-up pass before the measured run:
-
-```powershell
-uv run benchmark-load --cycle 2026 --warmup
-```
-
-- Override thread count used by benchmark runs:
-
-```powershell
-uv run benchmark-load --cycle 2026 --tables indiv oppexp oth pas2 --dbt-threads 1
-```
-
-- Keep isolated benchmark databases and logs for inspection:
-
-```powershell
-uv run benchmark-load --cycle 2026 --keep-run-dir
-```
-
-- The command writes CSV results under `logs/load-timing/` and stores per-run artifacts under `tmp/benchmark-load/`.
-- The benchmark defaults to `--dbt-threads 1` for large-fact stability and repeatability.
-
-### Legacy Note
-
-- The previous Python extract-based loader path is no longer used as the default `load` command.
-- The repository now standardizes on the dbt zipfs path for raw table loads.
-
-### Common Recovery Steps
+### Common Recovery
 
 ```powershell
 uv sync
 uv run download --cycles 2026 --force
 uv run load --cycle 2026 --dbt-threads 1
+```
+
+For all advanced flags, use:
+
+```powershell
+uv run load --help
+uv run benchmark-load --help
 ```

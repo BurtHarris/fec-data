@@ -1,5 +1,34 @@
 LOAD zipfs;
 DROP TABLE IF EXISTS {TARGET_TABLE};
+
+CREATE TEMP TABLE _stg_{TABLE_NAME} (
+    CAND_ID VARCHAR,
+    CAND_NAME VARCHAR,
+    CAND_PTY_AFFILIATION VARCHAR,
+    CAND_ELECTION_YR VARCHAR,
+    CAND_OFFICE_ST VARCHAR,
+    CAND_OFFICE VARCHAR,
+    CAND_OFFICE_DISTRICT VARCHAR,
+    CAND_ICI VARCHAR,
+    CAND_STATUS VARCHAR,
+    CAND_PCC VARCHAR,
+    CAND_ST1 VARCHAR,
+    CAND_ST2 VARCHAR,
+    CAND_CITY VARCHAR,
+    CAND_ST VARCHAR,
+    CAND_ZIP VARCHAR
+);
+
+COPY _stg_{TABLE_NAME}
+FROM '{SOURCE_PATH}'
+(
+    DELIMITER '|',
+    HEADER FALSE,
+    AUTO_DETECT FALSE,
+    NULL_PADDING TRUE,
+    IGNORE_ERRORS TRUE
+);
+
 CREATE TABLE {TARGET_TABLE} AS
 SELECT
     CAND_ID,
@@ -22,32 +51,7 @@ SELECT
     CAND_CITY,
     CAND_ST,
     CAND_ZIP
-FROM read_csv(
-    '{SOURCE_PATH}',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CAND_ID':'VARCHAR',
-        'CAND_NAME':'VARCHAR',
-        'CAND_PTY_AFFILIATION':'VARCHAR',
-        'CAND_ELECTION_YR':'VARCHAR',
-        'CAND_OFFICE_ST':'VARCHAR',
-        'CAND_OFFICE':'VARCHAR',
-        'CAND_OFFICE_DISTRICT':'VARCHAR',
-        'CAND_ICI':'VARCHAR',
-        'CAND_STATUS':'VARCHAR',
-        'CAND_PCC':'VARCHAR',
-        'CAND_ST1':'VARCHAR',
-        'CAND_ST2':'VARCHAR',
-        'CAND_CITY':'VARCHAR',
-        'CAND_ST':'VARCHAR',
-        'CAND_ZIP':'VARCHAR'
-    }
-);
+FROM _stg_{TABLE_NAME};
 
 INSERT INTO etl.load_history (
     load_id,

@@ -1,5 +1,26 @@
 LOAD zipfs;
 DROP TABLE IF EXISTS {TARGET_TABLE};
+
+CREATE TEMP TABLE _stg_{TABLE_NAME} (
+    CAND_ID VARCHAR,
+    CAND_ELECTION_YR VARCHAR,
+    FEC_ELECTION_YR VARCHAR,
+    CMTE_ID VARCHAR,
+    CMTE_TP VARCHAR,
+    CMTE_DSGN VARCHAR,
+    LINKAGE_ID VARCHAR
+);
+
+COPY _stg_{TABLE_NAME}
+FROM '{SOURCE_PATH}'
+(
+    DELIMITER '|',
+    HEADER FALSE,
+    AUTO_DETECT FALSE,
+    NULL_PADDING TRUE,
+    IGNORE_ERRORS TRUE
+);
+
 CREATE TABLE {TARGET_TABLE} AS
 SELECT
     CAND_ID,
@@ -19,24 +40,7 @@ SELECT
     CMTE_TP,
     CMTE_DSGN,
     TRY_CAST(NULLIF(TRIM(LINKAGE_ID), '') AS BIGINT) AS LINKAGE_ID
-FROM read_csv(
-    '{SOURCE_PATH}',
-    delim='|',
-    header=false,
-    all_varchar=true,
-    null_padding=true,
-    ignore_errors=true,
-    sample_size=-1,
-    columns={
-        'CAND_ID':'VARCHAR',
-        'CAND_ELECTION_YR':'VARCHAR',
-        'FEC_ELECTION_YR':'VARCHAR',
-        'CMTE_ID':'VARCHAR',
-        'CMTE_TP':'VARCHAR',
-        'CMTE_DSGN':'VARCHAR',
-        'LINKAGE_ID':'VARCHAR'
-    }
-);
+FROM _stg_{TABLE_NAME};
 
 INSERT INTO etl.load_history (
     load_id,

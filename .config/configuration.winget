@@ -49,3 +49,51 @@ properties:
       settings:
         id: 7zip.7zip
         source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Ripgrep
+      directives:
+        description: Install ripgrep for fast recursive search
+      settings:
+        id: BurntSushi.ripgrep.MSVC
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: GitHubCli
+      directives:
+        description: Install GitHub CLI for repository and PR workflows
+      settings:
+        id: GitHub.cli
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Fd
+      directives:
+        description: Install fd for fast file discovery
+      settings:
+        id: sharkdp.fd
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Fzf
+      directives:
+        description: Install fzf for interactive fuzzy finding
+      settings:
+        id: junegunn.fzf
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Bat
+      directives:
+        description: Install bat for syntax-highlighted file previews
+      settings:
+        id: sharkdp.bat
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: Delta
+      directives:
+        description: Install delta for improved git diff viewing
+      settings:
+        id: dandavison.delta
+        source: winget

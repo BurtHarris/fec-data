@@ -53,11 +53,27 @@ Optional tool bootstrap on Windows:
 
 This repo keeps committed, self-contained HTML artifacts under `artifacts/` for analysis notes, diagrams, reviews, and reports. For this project, the recommended in-editor preview workflow is the official VS Code Live Preview extension (`ms-vscode.live-server`), which is listed in the workspace recommendations.
 
+When opening HTML artifacts in this project, prefer the rendered view over raw source whenever practical.
+
+Option A: Built-in browser rendering (Live Preview)
 1. Open an HTML artifact file.
 2. Run `Live Preview: Show Preview` from the Command Palette.
 3. Keep the preview beside the editor while you iterate on the file.
 
+Option B: Visual editor workflow (WYSIWYG HTML Editor)
+1. Open an HTML file.
+2. Run `WYSIWYG HTML: Open WYSIWYG Editor` from the Command Palette.
+3. Edit in visual mode with bidirectional sync back to source.
+
 For a final rendering check, open the same file in your normal browser as well.
+
+Validate HTML links (local + remote):
+
+```powershell
+.\scripts\check-html-links.ps1
+```
+
+This writes a JSON report to `tmp/html_link_check_artifacts.json` and exits non-zero if broken links are found.
 
 ## CLI Commands
 

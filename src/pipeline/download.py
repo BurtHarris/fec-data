@@ -19,6 +19,8 @@ from urllib.request import Request, urlopen
 
 import yaml
 
+from pipeline.cli_common import validate_even_cycle
+
 
 DEFAULT_TABLES = ("ccl", "cm", "cn", "indiv", "oppexp", "oth", "pas2", "weball")
 DEFAULT_COVERAGE_CONFIG = Path("config") / "fec_bulk_coverage.yml"
@@ -98,13 +100,6 @@ def year_range_values(year_range: tuple[int, int]) -> list[int]:
     start_year, end_year = year_range
     first = start_year if start_year % 2 == 0 else start_year + 1
     return list(range(first, end_year + 1, 2))
-
-
-def validate_even_cycle(cycle: int, context: str) -> None:
-    """Fail fast when a provided cycle year is not even."""
-
-    if cycle % 2 != 0:
-        raise SystemExit(f"{context} must be an even election cycle year: {cycle}")
 
 
 def load_coverage_config(path: Path) -> dict[str, Any] | None:

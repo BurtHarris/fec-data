@@ -16,7 +16,8 @@ from pathlib import Path
 import duckdb
 import yaml
 
-from pipeline.etl_config import DEFAULT_ETL_CONFIG_PATH, load_etl_model_config, repo_root
+from pipeline.cli_common import default_tables_for_cycle, normalize_tables, validate_even_cycle
+from pipeline.etl_config import repo_root
 
 
 FACT_TABLES = {"indiv", "oppexp", "oth", "pas2"}
@@ -48,28 +49,6 @@ def utc_now_compact() -> str:
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def default_tables_for_cycle(root: Path, cycle: int) -> list[str]:
-    cycle_suffix = str(cycle)[-2:]
-    config_path = root / DEFAULT_ETL_CONFIG_PATH
-    configs = load_etl_model_config(config_path, cycle_suffix=cycle_suffix)
-    return [item.name for item in configs]
-
-
-def normalize_tables(raw_tables: list[str] | None, defaults: list[str]) -> list[str]:
-    if not raw_tables:
-        return defaults
-
-    tables: list[str] = []
-    for value in raw_tables:
-        tables.extend(part.strip().lower() for part in value.split(",") if part.strip())
-
-    invalid = sorted(set(tables) - set(defaults))
-    if invalid:
-        valid = ", ".join(defaults)
-        raise SystemExit(f"Unknown table(s): {', '.join(invalid)}. Valid tables: {valid}")
-    return tables
 
 
 def selected_tables_for_args(root: Path, cycle: int, raw_tables: list[str] | None) -> list[str]:
@@ -310,8 +289,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.cycle % 2 != 0:
-        raise SystemExit(f"Cycle must be an even election year: {args.cycle}")
+    validate_even_cycle(args.cycle)
     if args.dbt_threads < 1:
         raise SystemExit(f"--dbt-threads must be at least 1: {args.dbt_threads}")
 

@@ -109,13 +109,7 @@ uv run download --cycles 2030 --strict-coverage
 
 ### Loader (`uv run load`)
 
-- Infer cycles and tables from downloaded ZIPs:
-
-```powershell
-uv run load
-```
-
-- Load all configured tables for one explicit cycle:
+- Load all configured raw models for one cycle via dbt zipfs:
 
 ```powershell
 uv run load --cycle 2026
@@ -127,28 +121,70 @@ uv run load --cycle 2026
 uv run load --cycle 2026 --tables cm cn
 ```
 
-- Force reload even if source ZIP hash is unchanged:
+- Override dbt thread count for the loader:
 
 ```powershell
-uv run load --cycle 2026 --tables cm --force
+uv run load --cycle 2026 --tables indiv oppexp oth pas2 --dbt-threads 1
 ```
 
-- Use a different database file for repro/debug:
+- Pass through additional dbt selectors if needed:
 
 ```powershell
-uv run load --cycle 2026 --db-path db/fec-debug.duckdb
+uv run load --cycle 2026 --select state:modified+
 ```
 
-- Use a different metadata DB file for repro/debug:
+- Use a custom dbt profiles directory:
 
 ```powershell
-uv run load --cycle 2026 --metadata-db-path db/fec-metadata-debug.sqlite
+uv run load --cycle 2026 --profiles-dir .
 ```
+
+- Note: loader execution now uses the dbt zipfs path rather than Python ZIP extraction.
+
+### Benchmark (`uv run benchmark-load`)
+
+- Benchmark dbt zipfs load performance for one cycle:
+
+```powershell
+uv run benchmark-load --cycle 2026
+```
+
+- Benchmark specific tables only:
+
+```powershell
+uv run benchmark-load --cycle 2026 --tables indiv oppexp oth pas2
+```
+
+- Add a warm-up pass before the measured run:
+
+```powershell
+uv run benchmark-load --cycle 2026 --warmup
+```
+
+- Override thread count used by benchmark runs:
+
+```powershell
+uv run benchmark-load --cycle 2026 --tables indiv oppexp oth pas2 --dbt-threads 1
+```
+
+- Keep isolated benchmark databases and logs for inspection:
+
+```powershell
+uv run benchmark-load --cycle 2026 --keep-run-dir
+```
+
+- The command writes CSV results under `logs/load-timing/` and stores per-run artifacts under `tmp/benchmark-load/`.
+- The benchmark defaults to `--dbt-threads 1` for large-fact stability and repeatability.
+
+### Legacy Note
+
+- The previous Python extract-based loader path is no longer used as the default `load` command.
+- The repository now standardizes on the dbt zipfs path for raw table loads.
 
 ### Common Recovery Steps
 
 ```powershell
 uv sync
 uv run download --cycles 2026 --force
-uv run load --cycle 2026 --force
+uv run load --cycle 2026 --dbt-threads 1
 ```

@@ -11,8 +11,10 @@ dependencies = [
 [project.scripts]
 # Primary console script.
 download = "pipeline.download:main"
-# Raw DuckDB loader.
-load = "pipeline.load:main"
+# Raw DuckDB loader (dbt zipfs path).
+load = "pipeline.load_zipfs:main"
+# Benchmark dbt zipfs raw-load performance.
+benchmark-load = "pipeline.benchmark_load:main"
 
 [tool.uv]
 package = true

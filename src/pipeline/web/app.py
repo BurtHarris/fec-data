@@ -9,10 +9,13 @@ from urllib.parse import parse_qs, urlencode
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
+import yaml
 
-from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, DEFAULT_TABLES, load_data_scope_config
+from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, load_data_scope_config, parse_year_range
 from pipeline.etl_config import repo_root
 from pipeline.web.command_runner import CommandAuditStore, CommandRequest, CommandRunner, CommandRunRecord
+from pipeline.web.upstream_changes import load_upstream_changes_report
+from pipeline.web.upstream_render import render_upstream_changes
 
 
 SCREEN_ROUTES: tuple[tuple[str, str], ...] = (
@@ -23,8 +26,7 @@ SCREEN_ROUTES: tuple[tuple[str, str], ...] = (
     ("/upstream-changes", "Upstream Changes"),
 )
 
-
-def render_shell(active_path: str, body_html: str | None = None) -> str:
+def render_shell(active_path: str, body_html: str | None = None, extra_head_html: str = "") -> str:
     """Render a minimal server-side HTML shell with nav placeholders."""
 
     nav_items: list[str] = []
@@ -47,6 +49,7 @@ def render_shell(active_path: str, body_html: str | None = None) -> str:
     <meta charset='utf-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
     <title>MoneyTrail Operations</title>
+    {extra_head_html}
     <style>
       :root {{
         --bg: #f6f7ef;
@@ -175,12 +178,17 @@ def render_shell(active_path: str, body_html: str | None = None) -> str:
         font-weight: 600;
       }}
       .field input,
-      .field select {{
+      .field select,
+      .field textarea {{
         border: 1px solid var(--line);
         border-radius: 0.45rem;
         padding: 0.55rem 0.65rem;
         font: inherit;
         background: white;
+      }}
+      .field textarea {{
+        min-height: 14rem;
+        resize: vertical;
       }}
       .checkbox-grid {{
         display: grid;
@@ -222,6 +230,36 @@ def render_shell(active_path: str, body_html: str | None = None) -> str:
         border-color: #b76868;
         background: #fff5f3;
       }}
+      .metric-grid {{
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+      }}
+      .metric-card {{
+        border: 1px solid var(--line);
+        border-radius: 0.65rem;
+        padding: 0.85rem 0.9rem;
+        background: #fcfcf6;
+      }}
+      .metric-card strong {{
+        display: block;
+        font-size: 1.35rem;
+        margin-top: 0.2rem;
+      }}
+      table {{
+        width: 100%;
+        border-collapse: collapse;
+      }}
+      th,
+      td {{
+        padding: 0.55rem 0.6rem;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }}
+      th {{
+        font-size: 0.85rem;
+      }}
       @media (max-width: 760px) {{
         .nav {{
           grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -229,6 +267,7 @@ def render_shell(active_path: str, body_html: str | None = None) -> str:
         .dashboard-grid {{
           grid-template-columns: 1fr;
         }}
+        .metric-grid,
         .form-grid,
         .checkbox-grid {{
           grid-template-columns: 1fr;
@@ -265,13 +304,36 @@ def _render_detail_rows(rows: list[tuple[str, str]]) -> str:
     return f"<dl class='detail-list'>{''.join(items)}</dl>"
 
 
+def _render_table(headers: list[str], rows: list[list[str]]) -> str:
+    head_html = "".join(f"<th>{escape(header)}</th>" for header in headers)
+    body_html = "".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
+        for row in rows
+    )
+    return (
+        "<div style='overflow-x:auto'>"
+        f"<table><thead><tr>{head_html}</tr></thead><tbody>{body_html}</tbody></table>"
+        "</div>"
+    )
+
+
+def _render_log_cell(log_path: str | None) -> str:
+    if not log_path:
+        return "n/a"
+    try:
+        href = Path(log_path).as_uri()
+        return f"<a href='{escape(href)}'>{escape(log_path)}</a>"
+    except ValueError:
+        return escape(log_path)
+
+
 def _format_record(record: CommandRunRecord) -> str:
     return _render_detail_rows(
         [
             ("Status", record.lifecycle_state),
             ("Command", record.command),
             ("Operator", record.operator_id),
-            ("Request ID", record.request_id),
+            ("Run", str(record.run_number) if record.run_number is not None else "pending"),
             ("Requested", record.requested_at),
             ("Launched", record.launched_at or "not launched"),
             ("Completed", record.completed_at or "in progress"),
@@ -321,7 +383,7 @@ def _render_dashboard(repo_root_path: Path, active_run: CommandRunRecord | None)
                 ("Status", active_run.lifecycle_state),
                 ("Command", active_run.command),
                 ("Operator", active_run.operator_id),
-                ("Request ID", active_run.request_id),
+                ("Run", str(active_run.run_number) if active_run.run_number is not None else "pending"),
                 ("Requested", active_run.requested_at),
                 ("Launched", active_run.launched_at or "not launched"),
                 ("PID", str(active_run.pid) if active_run.pid is not None else "n/a"),
@@ -347,31 +409,155 @@ def _render_dashboard(repo_root_path: Path, active_run: CommandRunRecord | None)
     return render_shell("/dashboard", body_html=body_html)
 
 
+def _load_scope_view_state(config_path: Path) -> tuple[list[tuple[str, str]], str | None, str]:
+    try:
+        config = load_data_scope_config(config_path)
+    except SystemExit as exc:
+        preview = "Resolved YAML preview unavailable until the Data Scope config validates."
+        return [
+            ("Status", "unavailable"),
+            ("Config path", str(config_path)),
+        ], str(exc), preview
+
+    preview = yaml.safe_dump(config, sort_keys=False)
+    return [
+        ("Status", "configured"),
+        ("Config path", str(config_path)),
+        ("Coverage", str(config["coverage"])),
+        ("Facts", str(config["facts"])),
+        ("Dimension tables", ", ".join(config["table_groups"]["dimensions"]) or "(none)"),
+        ("Fact tables", ", ".join(config["table_groups"]["facts"]) or "(none)"),
+    ], None, preview
+
+
+def _render_scope_editor(
+    summary_rows: list[tuple[str, str]],
+    preview_yaml: str,
+    error_message: str | None = None,
+) -> str:
+    message_html = ""
+    if error_message:
+        message_html += f"<section class='message error'><strong>Data Scope error.</strong> {escape(error_message)}</section>"
+
+    body_html = f"""
+<div class='stack'>
+  {message_html}
+  <section class='subpanel'>
+    <h3>Canonical Data Scope Config</h3>
+    <p class='muted'>The canonical YAML is already readable as-is. In-app editing is deferred to developer workflows for now.</p>
+    {_render_detail_rows(summary_rows)}
+  </section>
+  <section class='subpanel'>
+    <h3>Resolved YAML Preview</h3>
+    <p class='muted'>Shows the canonical YAML that current and future Workflow Runs read from disk.</p>
+    <div class='field'>
+      <textarea readonly>{escape(preview_yaml)}</textarea>
+    </div>
+  </section>
+</div>
+"""
+    return render_shell("/data-scope-config", body_html=body_html)
+
+
+def _render_history(records: list[CommandRunRecord]) -> str:
+    if not records:
+        body_html = """
+<div class='stack'>
+  <section class='subpanel'>
+    <h3>Run History</h3>
+    <p class='muted'>No persisted Workflow Runs yet. Rejected, failed, canceled, and completed runs will appear here once the audit log has entries.</p>
+  </section>
+</div>
+"""
+        return render_shell("/history", body_html=body_html)
+
+    lifecycle_counts: dict[str, int] = {}
+    for record in records:
+        lifecycle_counts[record.lifecycle_state] = lifecycle_counts.get(record.lifecycle_state, 0) + 1
+    summary_rows = [(state, str(count)) for state, count in sorted(lifecycle_counts.items())]
+    table_rows = [
+        [
+            escape(record.requested_at),
+            escape(record.command),
+            escape(record.operator_id),
+            escape(record.lifecycle_state),
+            escape(record.admission_status),
+            escape(record.launched_at or "n/a"),
+            escape(record.completed_at or "n/a"),
+            escape(str(record.exit_code) if record.exit_code is not None else "n/a"),
+            _render_log_cell(record.log_path),
+            escape(str(record.run_number) if record.run_number is not None else "n/a"),
+        ]
+        for record in records
+    ]
+
+    body_html = f"""
+<div class='stack'>
+  <section class='subpanel'>
+    <h3>Run History</h3>
+    <p class='muted'>Recent Workflow Runs from the persisted audit log, including rejected attempts and terminal outcomes.</p>
+    {_render_detail_rows(summary_rows)}
+  </section>
+  <section class='subpanel'>
+    <h3>Recent audit records</h3>
+    {_render_table(
+        ["Requested", "Command", "Operator", "Lifecycle", "Admission", "Launched", "Completed", "Exit", "Log", "Run"],
+        table_rows,
+    )}
+  </section>
+</div>
+"""
+    return render_shell("/history", body_html=body_html)
+
+
+def _load_runs_scope_state(config_path: Path) -> tuple[dict[str, object] | None, list[tuple[str, str]], str | None, str]:
+    try:
+        config = load_data_scope_config(config_path)
+    except SystemExit as exc:
+        preview = "Resolved YAML preview unavailable until the Data Scope config validates."
+        return None, [("Config path", str(config_path)), ("Status", "unavailable")], str(exc), preview
+
+    _, facts_end_year = parse_year_range(config["facts"], "facts")
+    tables: list[str] = []
+    seen: set[str] = set()
+    for group_name in ("dimensions", "facts"):
+        for table in config["table_groups"][group_name]:
+            if table in seen:
+                continue
+            seen.add(table)
+            tables.append(table)
+
+    return (
+        {
+            "cycle": facts_end_year,
+            "tables": tuple(tables),
+        },
+        [
+            ("Config path", str(config_path)),
+            ("Coverage", str(config["coverage"])),
+            ("Facts", str(config["facts"])),
+            ("Derived cycle", str(facts_end_year)),
+            ("Run tables", ", ".join(tables) or "(none)"),
+        ],
+        None,
+        yaml.safe_dump(config, sort_keys=False),
+    )
+
+
 def _render_runs(
     active_run: CommandRunRecord | None,
-    request_record: CommandRunRecord | None,
+    recent_runs: list[CommandRunRecord],
+    scope_summary_rows: list[tuple[str, str]],
+    scope_preview_yaml: str,
     message: str | None = None,
     error_message: str | None = None,
     form_values: dict[str, str] | None = None,
-    selected_tables: tuple[str, ...] = (),
 ) -> str:
     values = {
         "operator_id": "",
         "command": "fetch",
-        "cycle": "",
-        "dbt_threads": "",
         **(form_values or {}),
     }
-    selected = set(selected_tables)
-    table_inputs = "".join(
-        (
-            "<label class='checkbox-item'>"
-            f"<input type='checkbox' name='tables' value='{escape(table)}' {'checked' if table in selected else ''}>"
-            f"<span>{escape(table)}</span>"
-            "</label>"
-        )
-        for table in DEFAULT_TABLES
-    )
 
     message_html = ""
     if message:
@@ -384,17 +570,36 @@ def _render_runs(
         if active_run is None
         else _format_record(active_run)
     )
-    request_html = (
-        "<p class='muted'>No recently submitted Workflow Run is selected.</p>"
-        if request_record is None
-        else _format_record(request_record)
-    )
     cancel_form = ""
     if active_run is not None:
+        active_run_number = str(active_run.run_number) if active_run.run_number is not None else "pending"
         cancel_form = (
-            f"<form method='post' action='/runs/{escape(active_run.request_id)}/cancel'>"
+            f"<form method='post' action='/runs/{active_run_number}/cancel'>"
             "<button class='button secondary' type='submit'>Cancel active run</button>"
             "</form>"
+        )
+
+    if recent_runs:
+        recent_run_rows = [
+            [
+                escape(str(record.run_number) if record.run_number is not None else "n/a"),
+                escape(record.requested_at),
+                escape(record.command),
+                escape(record.operator_id),
+                escape(record.lifecycle_state),
+                escape(record.admission_status),
+                escape(str(record.exit_code) if record.exit_code is not None else "n/a"),
+                _render_log_cell(record.log_path),
+            ]
+            for record in recent_runs
+        ]
+        recent_runs_html = _render_table(
+            ["Run", "Requested", "Command", "Operator", "Lifecycle", "Admission", "Exit", "Log"],
+            recent_run_rows,
+        )
+    else:
+        recent_runs_html = (
+            "<p class='muted'>No persisted Workflow Runs yet. This log refreshes automatically every 10 seconds once runs exist.</p>"
         )
 
     body_html = f"""
@@ -402,7 +607,7 @@ def _render_runs(
   {message_html}
   <section class='subpanel'>
     <h3>Submit Workflow Run</h3>
-    <p class='muted'>Launch an allowlisted fetch, load, or benchmark workflow run. Run controls stay gated behind armed and confirmed toggles.</p>
+    <p class='muted'>Launch an allowlisted fetch, load, or benchmark workflow run. Cycle and table scope come from the canonical Data Scope YAML.</p>
     <form method='post' action='/runs/submit'>
       <div class='form-grid'>
         <div class='field'>
@@ -417,21 +622,8 @@ def _render_runs(
             <option value='benchmark-load' {'selected' if values['command'] == 'benchmark-load' else ''}>benchmark-load</option>
           </select>
         </div>
-        <div class='field'>
-          <label for='cycle'>Cycle</label>
-          <input id='cycle' name='cycle' type='number' value='{escape(values["cycle"])}' min='1970' step='2' required>
-        </div>
-        <div class='field'>
-          <label for='dbt_threads'>dbt threads (load and benchmark-load)</label>
-          <input id='dbt_threads' name='dbt_threads' type='number' value='{escape(values["dbt_threads"])}' min='1'>
-        </div>
-      </div>
-      <div class='field'>
-        <label>Tables</label>
-        <div class='checkbox-grid'>{table_inputs}</div>
       </div>
       <div class='actions'>
-        <label class='toggle-row'><input name='force' type='checkbox' {'checked' if values.get('force') == 'on' else ''}> <span>Force fetch</span></label>
         <label class='toggle-row'><input name='armed' type='checkbox' {'checked' if values.get('armed') == 'on' else ''}> <span>App is armed</span></label>
         <label class='toggle-row'><input name='confirmed' type='checkbox' {'checked' if values.get('confirmed') == 'on' else ''}> <span>I confirm this Workflow Run</span></label>
       </div>
@@ -442,27 +634,45 @@ def _render_runs(
   </section>
   <div class='dashboard-grid'>
     <section class='subpanel'>
+      <h3>Run Request Source</h3>
+      <p class='muted'>Each Workflow Run uses the canonical Data Scope YAML. The request derives cycle and table scope directly from that file.</p>
+      {_render_detail_rows(scope_summary_rows)}
+    </section>
+    <section class='subpanel'>
+      <h3>Resolved YAML Preview</h3>
+      <div class='field'>
+        <textarea readonly>{escape(scope_preview_yaml)}</textarea>
+      </div>
+    </section>
+  </div>
+  <div class='dashboard-grid'>
+    <section class='subpanel'>
       <h3>Active Workflow Run</h3>
       <p class='muted'>The Run Lock permits one active Workflow Run at a time.</p>
       {active_html}
       <div class='actions'>{cancel_form}</div>
     </section>
     <section class='subpanel'>
-      <h3>Selected Run Result</h3>
-      <p class='muted'>Shows the persisted audit record for the run selected by redirect after submission or cancel.</p>
-      {request_html}
+      <h3>Recent Run Log</h3>
+      <p class='muted'>Recent audit records are shown here and the page refreshes every 10 seconds while you watch a run progress.</p>
+      {recent_runs_html}
     </section>
   </div>
 </div>
 """
-    return render_shell("/runs", body_html=body_html)
+    return render_shell("/runs", body_html=body_html, extra_head_html="<meta http-equiv='refresh' content='10'>")
 
 
-def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None = None) -> FastAPI:
+def create_app(
+    repo_root_path: Path | None = None,
+    runner: CommandRunner | None = None,
+    metadata_db_path: Path | None = None,
+) -> FastAPI:
     """Create the operations web app instance."""
 
     app = FastAPI(title="MoneyTrail Operations", version="0.1.0")
     resolved_repo_root = repo_root_path or repo_root()
+    resolved_metadata_db_path = metadata_db_path or resolved_repo_root / Path("db") / "fec-metadata.sqlite"
     app_runner = runner
     if app_runner is None:
         store = CommandAuditStore(resolved_repo_root / Path("db") / "ops_web.sqlite")
@@ -479,7 +689,7 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
         dbt_threads: int | None = None
 
     class RunSubmitResponse(BaseModel):
-        request_id: str
+        run_number: int
         admission_status: str
         rejection_reason: str | None
         launch_status: str
@@ -493,11 +703,11 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
 
     class ActiveRunResponse(BaseModel):
         active: bool
-        request_id: str | None = None
+        run_number: int | None = None
         lifecycle_state: str | None = None
 
     class RunStatusResponse(BaseModel):
-        request_id: str
+        run_number: int
         admission_status: str
         launch_status: str
         lifecycle_state: str
@@ -552,7 +762,7 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
             )
         )
         return RunSubmitResponse(
-            request_id=record.request_id,
+            run_number=record.run_number or 0,
             admission_status=record.admission_status,
             rejection_reason=record.rejection_reason,
             launch_status=record.launch_status,
@@ -570,15 +780,19 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
         record = app_runner.get_active_run()
         if record is None:
             return ActiveRunResponse(active=False)
-        return ActiveRunResponse(active=True, request_id=record.request_id, lifecycle_state=record.lifecycle_state)
+        return ActiveRunResponse(
+            active=True,
+            run_number=record.run_number,
+            lifecycle_state=record.lifecycle_state,
+        )
 
-    @app.get("/api/runs/{request_id}", response_model=RunStatusResponse)
-    def run_status(request_id: str) -> RunStatusResponse:
-        record = app_runner.get_run(request_id)
+    @app.get("/api/runs/{run_number}", response_model=RunStatusResponse)
+    def run_status(run_number: int) -> RunStatusResponse:
+        record = app_runner.get_run(run_number)
         if record is None:
             raise HTTPException(status_code=404, detail="run not found")
         return RunStatusResponse(
-            request_id=record.request_id,
+            run_number=record.run_number or 0,
             admission_status=record.admission_status,
             launch_status=record.launch_status,
             lifecycle_state=record.lifecycle_state,
@@ -590,14 +804,14 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
             log_path=record.log_path,
         )
 
-    @app.post("/api/runs/{request_id}/cancel", response_model=RunStatusResponse)
-    def cancel_run(request_id: str) -> RunStatusResponse:
+    @app.post("/api/runs/{run_number}/cancel", response_model=RunStatusResponse)
+    def cancel_run(run_number: int) -> RunStatusResponse:
         try:
-            record = app_runner.cancel_run(request_id)
+            record = app_runner.cancel_run(run_number)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return RunStatusResponse(
-            request_id=record.request_id,
+            run_number=record.run_number or 0,
             admission_status=record.admission_status,
             launch_status=record.launch_status,
             lifecycle_state=record.lifecycle_state,
@@ -613,15 +827,45 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
     def dashboard() -> HTMLResponse:
         return HTMLResponse(content=_render_dashboard(resolved_repo_root, app_runner.get_active_run()))
 
+    @app.get("/data-scope-config", response_class=HTMLResponse, include_in_schema=False)
+    def data_scope_config() -> HTMLResponse:
+        config_path = resolved_repo_root / CANONICAL_DATA_SCOPE_PATH
+        summary_rows, load_error, preview_yaml = _load_scope_view_state(config_path)
+        return HTMLResponse(
+            content=_render_scope_editor(
+                summary_rows=summary_rows,
+                preview_yaml=preview_yaml,
+                error_message=load_error,
+            )
+        )
+
+    @app.get("/history", response_class=HTMLResponse, include_in_schema=False)
+    def history() -> HTMLResponse:
+        return HTMLResponse(content=_render_history(app_runner.list_recent_runs(limit=25)))
+
+    @app.get("/upstream-changes", response_class=HTMLResponse, include_in_schema=False)
+    def upstream_changes() -> HTMLResponse:
+        report = load_upstream_changes_report(resolved_metadata_db_path)
+        return HTMLResponse(content=render_shell("/upstream-changes", body_html=render_upstream_changes(report)))
+
     @app.get("/runs", response_class=HTMLResponse, include_in_schema=False)
-    def runs(request_id: str | None = None, message: str | None = None, error: str | None = None) -> HTMLResponse:
-        selected_record = app_runner.get_run(request_id) if request_id else None
+    def runs(run_number: int | None = None, message: str | None = None, error: str | None = None) -> HTMLResponse:
+        _, scope_summary_rows, scope_error, scope_preview_yaml = _load_runs_scope_state(
+            resolved_repo_root / CANONICAL_DATA_SCOPE_PATH
+        )
+        recent_runs = app_runner.list_recent_runs(limit=10)
+        if run_number is not None:
+            selected_record = app_runner.get_run(run_number)
+            if selected_record is not None:
+                recent_runs = [selected_record] + [record for record in recent_runs if record.run_number != run_number]
         return HTMLResponse(
             content=_render_runs(
                 active_run=app_runner.get_active_run(),
-                request_record=selected_record,
+                recent_runs=recent_runs,
+                scope_summary_rows=scope_summary_rows,
+                scope_preview_yaml=scope_preview_yaml,
                 message=message,
-                error_message=error,
+                error_message=error or scope_error,
             )
         )
 
@@ -631,39 +875,21 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
         form_values = {
             "operator_id": form_data.get("operator_id", [""])[0],
             "command": form_data.get("command", ["fetch"])[0],
-            "cycle": form_data.get("cycle", [""])[0],
-            "dbt_threads": form_data.get("dbt_threads", [""])[0],
-            "force": "on" if "force" in form_data else "",
             "armed": "on" if "armed" in form_data else "",
             "confirmed": "on" if "confirmed" in form_data else "",
         }
-        selected_tables = tuple(table.strip().lower() for table in form_data.get("tables", []) if table.strip())
-
-        try:
-            cycle = int(form_values["cycle"])
-        except ValueError:
+        scope_config, scope_summary_rows, scope_error, scope_preview_yaml = _load_runs_scope_state(
+            resolved_repo_root / CANONICAL_DATA_SCOPE_PATH
+        )
+        if scope_config is None:
             return HTMLResponse(
                 content=_render_runs(
                     active_run=app_runner.get_active_run(),
-                    request_record=None,
-                    error_message="cycle must be a whole year",
+                    recent_runs=app_runner.list_recent_runs(limit=10),
+                    scope_summary_rows=scope_summary_rows,
+                    scope_preview_yaml=scope_preview_yaml,
+                    error_message=scope_error,
                     form_values=form_values,
-                    selected_tables=selected_tables,
-                ),
-                status_code=400,
-            )
-
-        dbt_threads_raw = form_values["dbt_threads"].strip()
-        try:
-            dbt_threads = int(dbt_threads_raw) if dbt_threads_raw else None
-        except ValueError:
-            return HTMLResponse(
-                content=_render_runs(
-                    active_run=app_runner.get_active_run(),
-                    request_record=None,
-                    error_message="dbt threads must be a whole number",
-                    form_values=form_values,
-                    selected_tables=selected_tables,
                 ),
                 status_code=400,
             )
@@ -674,38 +900,38 @@ def create_app(repo_root_path: Path | None = None, runner: CommandRunner | None 
                 operator_id=form_values["operator_id"],
                 armed="armed" in form_data,
                 confirmed="confirmed" in form_data,
-                cycle=cycle,
-                tables=list(selected_tables),
-                force="force" in form_data,
-                dbt_threads=dbt_threads,
+                cycle=int(scope_config["cycle"]),
+                tables=list(scope_config["tables"]),
+                force=False,
+                dbt_threads=None,
             )
         )
         params = urlencode(
             {
-                "request_id": record.request_id,
-                "message": f"Workflow Run {record.request_id} saved with {record.lifecycle_state} status.",
+                "run_number": record.run_number,
+                "message": f"Workflow Run {record.run_number} saved with {record.lifecycle_state} status.",
             }
         )
         return RedirectResponse(url=f"/runs?{params}", status_code=303)
 
-    @app.post("/runs/{request_id}/cancel", include_in_schema=False)
-    def cancel_run_page(request_id: str) -> RedirectResponse:
+    @app.post("/runs/{run_number}/cancel", include_in_schema=False)
+    def cancel_run_page(run_number: int) -> RedirectResponse:
         try:
-            record = app_runner.cancel_run(request_id)
+            record = app_runner.cancel_run(run_number)
         except KeyError as exc:
             params = urlencode({"error": str(exc)})
             return RedirectResponse(url=f"/runs?{params}", status_code=303)
 
         params = urlencode(
             {
-                "request_id": record.request_id,
-                "message": f"Workflow Run {record.request_id} is now {record.lifecycle_state}.",
+                "run_number": record.run_number,
+                "message": f"Workflow Run {record.run_number} is now {record.lifecycle_state}.",
             }
         )
         return RedirectResponse(url=f"/runs?{params}", status_code=303)
 
     for path, label in SCREEN_ROUTES:
-        if path in {"/dashboard", "/runs"}:
+        if path in {"/dashboard", "/runs", "/data-scope-config", "/history", "/upstream-changes"}:
             continue
 
         def render_page(page_path: str = path, page_label: str = label) -> HTMLResponse:

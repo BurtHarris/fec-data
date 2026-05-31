@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
-import uuid
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -38,7 +37,7 @@ class CommandRequest:
 class CommandRunRecord:
     """Persisted audit record for one command admission and launch attempt."""
 
-    request_id: str
+    run_number: int | None
     requested_at: str
     operator_id: str
     command: str
@@ -69,41 +68,98 @@ class CommandAuditStore:
 
     def _ensure_schema(self) -> None:
         with closing(self._connect()) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS command_run_log (
-                    request_id TEXT PRIMARY KEY,
-                    requested_at TEXT NOT NULL,
-                    operator_id TEXT NOT NULL,
-                    command_name TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    admission_status TEXT NOT NULL,
-                    rejection_reason TEXT,
-                    launch_status TEXT NOT NULL,
-                    launch_error TEXT,
-                    launched_at TEXT,
-                    pid INTEGER,
-                    command_line TEXT,
-                    log_path TEXT,
-                    lifecycle_state TEXT NOT NULL DEFAULT 'rejected',
-                    completed_at TEXT,
-                    exit_code INTEGER
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS run_lock (
-                    lock_name TEXT PRIMARY KEY,
-                    request_id TEXT NOT NULL,
-                    acquired_at TEXT NOT NULL
-                )
-                """
-            )
+            if self._command_run_log_needs_migration(conn):
+                self._migrate_legacy_schema(conn)
+            self._create_tables(conn)
             self._ensure_column(conn, "command_run_log", "lifecycle_state", "TEXT NOT NULL DEFAULT 'rejected'")
             self._ensure_column(conn, "command_run_log", "completed_at", "TEXT")
             self._ensure_column(conn, "command_run_log", "exit_code", "INTEGER")
             conn.commit()
+
+    def _create_tables(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS command_run_log (
+                run_number INTEGER PRIMARY KEY AUTOINCREMENT,
+                requested_at TEXT NOT NULL,
+                operator_id TEXT NOT NULL,
+                command_name TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                admission_status TEXT NOT NULL,
+                rejection_reason TEXT,
+                launch_status TEXT NOT NULL,
+                launch_error TEXT,
+                launched_at TEXT,
+                pid INTEGER,
+                command_line TEXT,
+                log_path TEXT,
+                lifecycle_state TEXT NOT NULL DEFAULT 'rejected',
+                completed_at TEXT,
+                exit_code INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS run_lock (
+                lock_name TEXT PRIMARY KEY,
+                run_number INTEGER NOT NULL,
+                acquired_at TEXT NOT NULL
+            )
+            """
+        )
+
+    def _command_run_log_needs_migration(self, conn: sqlite3.Connection) -> bool:
+        rows = conn.execute("PRAGMA table_info(command_run_log)").fetchall()
+        if not rows:
+            return False
+        names = {row[1] for row in rows}
+        return "run_number" not in names or "request_id" in names
+
+    def _migrate_legacy_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute("ALTER TABLE command_run_log RENAME TO command_run_log_legacy")
+        conn.execute("DROP TABLE IF EXISTS run_lock")
+        self._create_tables(conn)
+        conn.execute(
+            """
+            INSERT INTO command_run_log (
+                requested_at,
+                operator_id,
+                command_name,
+                payload_json,
+                admission_status,
+                rejection_reason,
+                launch_status,
+                launch_error,
+                launched_at,
+                pid,
+                command_line,
+                log_path,
+                lifecycle_state,
+                completed_at,
+                exit_code
+            )
+            SELECT
+                requested_at,
+                operator_id,
+                command_name,
+                payload_json,
+                admission_status,
+                rejection_reason,
+                launch_status,
+                launch_error,
+                launched_at,
+                pid,
+                command_line,
+                log_path,
+                lifecycle_state,
+                completed_at,
+                exit_code
+            FROM command_run_log_legacy
+            ORDER BY rowid
+            """
+        )
+        conn.execute("DROP TABLE command_run_log_legacy")
 
     def _ensure_column(self, conn: sqlite3.Connection, table_name: str, column_name: str, ddl: str) -> None:
         rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
@@ -112,12 +168,11 @@ class CommandAuditStore:
             return
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}")
 
-    def insert_record(self, record: CommandRunRecord) -> None:
+    def insert_record(self, record: CommandRunRecord) -> int:
         with closing(self._connect()) as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO command_run_log (
-                    request_id,
                     requested_at,
                     operator_id,
                     command_name,
@@ -133,10 +188,9 @@ class CommandAuditStore:
                     lifecycle_state,
                     completed_at,
                     exit_code
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    record.request_id,
                     record.requested_at,
                     record.operator_id,
                     record.command,
@@ -155,10 +209,11 @@ class CommandAuditStore:
                 ),
             )
             conn.commit()
+            return int(cursor.lastrowid)
 
     def update_launch_outcome(
         self,
-        request_id: str,
+        run_number: int,
         launch_status: str,
         launch_error: str | None,
         launched_at: str | None,
@@ -171,15 +226,31 @@ class CommandAuditStore:
                 """
                 UPDATE command_run_log
                 SET launch_status = ?, launch_error = ?, launched_at = ?, pid = ?, command_line = ?, log_path = ?
-                WHERE request_id = ?
+                WHERE run_number = ?
                 """,
-                (launch_status, launch_error, launched_at, pid, command_line, log_path, request_id),
+                (launch_status, launch_error, launched_at, pid, command_line, log_path, run_number),
+            )
+            conn.commit()
+
+    def update_rejection(self, run_number: int, rejection_reason: str, completed_at: str) -> None:
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                UPDATE command_run_log
+                SET admission_status = 'rejected',
+                    rejection_reason = ?,
+                    launch_status = 'not_started',
+                    lifecycle_state = 'rejected',
+                    completed_at = ?
+                WHERE run_number = ?
+                """,
+                (rejection_reason, completed_at, run_number),
             )
             conn.commit()
 
     def update_lifecycle(
         self,
-        request_id: str,
+        run_number: int,
         lifecycle_state: str,
         completed_at: str | None,
         exit_code: int | None,
@@ -189,47 +260,47 @@ class CommandAuditStore:
                 """
                 UPDATE command_run_log
                 SET lifecycle_state = ?, completed_at = ?, exit_code = ?
-                WHERE request_id = ?
+                WHERE run_number = ?
                 """,
-                (lifecycle_state, completed_at, exit_code, request_id),
+                (lifecycle_state, completed_at, exit_code, run_number),
             )
             conn.commit()
 
-    def try_acquire_run_lock(self, request_id: str, acquired_at: str) -> bool:
+    def try_acquire_run_lock(self, run_number: int, acquired_at: str) -> bool:
         with closing(self._connect()) as conn:
             try:
                 conn.execute(
-                    "INSERT INTO run_lock (lock_name, request_id, acquired_at) VALUES ('active_run', ?, ?)",
-                    (request_id, acquired_at),
+                    "INSERT INTO run_lock (lock_name, run_number, acquired_at) VALUES ('active_run', ?, ?)",
+                    (run_number, acquired_at),
                 )
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
                 return False
 
-    def release_run_lock(self, request_id: str) -> None:
+    def release_run_lock(self, run_number: int) -> None:
         with closing(self._connect()) as conn:
             conn.execute(
-                "DELETE FROM run_lock WHERE lock_name = 'active_run' AND request_id = ?",
-                (request_id,),
+                "DELETE FROM run_lock WHERE lock_name = 'active_run' AND run_number = ?",
+                (run_number,),
             )
             conn.commit()
 
-    def get_active_run_id(self) -> str | None:
+    def get_active_run_number(self) -> int | None:
         with closing(self._connect()) as conn:
             row = conn.execute(
-                "SELECT request_id FROM run_lock WHERE lock_name = 'active_run'"
+                "SELECT run_number FROM run_lock WHERE lock_name = 'active_run'"
             ).fetchone()
         if row is None:
             return None
-        return str(row[0])
+        return int(row[0])
 
-    def get_record(self, request_id: str) -> CommandRunRecord | None:
+    def get_record(self, run_number: int) -> CommandRunRecord | None:
         with closing(self._connect()) as conn:
             row = conn.execute(
                 """
                 SELECT
-                    request_id,
+                    run_number,
                     requested_at,
                     operator_id,
                     command_name,
@@ -246,13 +317,42 @@ class CommandAuditStore:
                     completed_at,
                     exit_code
                 FROM command_run_log
-                WHERE request_id = ?
+                WHERE run_number = ?
                 """,
-                (request_id,),
+                (run_number,),
             ).fetchone()
         if not row:
             return None
         return CommandRunRecord(*row)
+
+    def list_recent_records(self, limit: int = 25) -> list[CommandRunRecord]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    run_number,
+                    requested_at,
+                    operator_id,
+                    command_name,
+                    payload_json,
+                    admission_status,
+                    rejection_reason,
+                    launch_status,
+                    launch_error,
+                    launched_at,
+                    pid,
+                    command_line,
+                    log_path,
+                    lifecycle_state,
+                    completed_at,
+                    exit_code
+                FROM command_run_log
+                ORDER BY run_number DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [CommandRunRecord(*row) for row in rows]
 
 
 class CommandRunner:
@@ -271,23 +371,16 @@ class CommandRunner:
         self._logs_dir = repo_root / "logs" / "ops-web"
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         self._process_launcher = process_launcher or subprocess.Popen
-        self._active_processes: dict[str, subprocess.Popen[str]] = {}
+        self._active_processes: dict[int, subprocess.Popen[str]] = {}
 
     def admit_and_launch(self, request: CommandRequest) -> CommandRunRecord:
         self.reconcile_running_processes()
-        request_id = str(uuid.uuid4())
         requested_at = utc_now_iso()
         payload_json = self._serialize_payload(request)
 
         rejected_reason = self._rejection_reason(request)
-        if rejected_reason is None:
-            lock_ok = self._store.try_acquire_run_lock(request_id=request_id, acquired_at=requested_at)
-            if not lock_ok:
-                active = self._store.get_active_run_id()
-                rejected_reason = f"run request rejected: another workflow run is active ({active})"
-
         record = CommandRunRecord(
-            request_id=request_id,
+            run_number=None,
             requested_at=requested_at,
             operator_id=request.operator_id,
             command=request.command,
@@ -304,13 +397,26 @@ class CommandRunner:
             completed_at=requested_at if rejected_reason else None,
             exit_code=None,
         )
-        self._store.insert_record(record)
+        run_number = self._store.insert_record(record)
 
         if rejected_reason:
-            return record
+            updated = self._store.get_record(run_number)
+            if updated is None:
+                raise RuntimeError("Failed to read back rejected run record")
+            return updated
+
+        lock_ok = self._store.try_acquire_run_lock(run_number=run_number, acquired_at=requested_at)
+        if not lock_ok:
+            active = self._store.get_active_run_number()
+            rejection_reason = f"run request rejected: another workflow run is active ({active})"
+            self._store.update_rejection(run_number, rejection_reason, requested_at)
+            updated = self._store.get_record(run_number)
+            if updated is None:
+                raise RuntimeError("Failed to read back lock-rejected run record")
+            return updated
 
         command = self._build_command(request)
-        log_path = self._logs_dir / f"{requested_at.replace(':', '').replace('-', '')}_{request_id}.log"
+        log_path = self._logs_dir / f"{requested_at.replace(':', '').replace('-', '')}_run-{run_number}.log"
         command_line = " ".join(command)
 
         try:
@@ -324,7 +430,7 @@ class CommandRunner:
                 )
         except OSError as exc:
             self._store.update_launch_outcome(
-                request_id=request_id,
+                run_number=run_number,
                 launch_status="launch_failed",
                 launch_error=str(exc),
                 launched_at=None,
@@ -333,21 +439,21 @@ class CommandRunner:
                 log_path=log_path.as_posix(),
             )
             self._store.update_lifecycle(
-                request_id=request_id,
+                run_number=run_number,
                 lifecycle_state="failed",
                 completed_at=utc_now_iso(),
                 exit_code=None,
             )
-            self._store.release_run_lock(request_id)
-            updated = self._store.get_record(request_id)
+            self._store.release_run_lock(run_number)
+            updated = self._store.get_record(run_number)
             if updated is None:
                 raise RuntimeError("Failed to persist launch failure record")
             return updated
 
-        self._active_processes[request_id] = process
+        self._active_processes[run_number] = process
         launched_at = utc_now_iso()
         self._store.update_launch_outcome(
-            request_id=request_id,
+            run_number=run_number,
             launch_status="launched",
             launch_error=None,
             launched_at=launched_at,
@@ -355,7 +461,7 @@ class CommandRunner:
             command_line=command_line,
             log_path=log_path.as_posix(),
         )
-        updated = self._store.get_record(request_id)
+        updated = self._store.get_record(run_number)
         if updated is None:
             raise RuntimeError("Failed to read back launch record")
         return updated
@@ -363,33 +469,33 @@ class CommandRunner:
     def reconcile_running_processes(self) -> None:
         """Advance lifecycle state for processes that have exited."""
 
-        finished: list[tuple[str, int]] = []
-        for request_id, process in list(self._active_processes.items()):
+        finished: list[tuple[int, int]] = []
+        for run_number, process in list(self._active_processes.items()):
             exit_code = process.poll()
             if exit_code is None:
                 continue
-            finished.append((request_id, exit_code))
+            finished.append((run_number, exit_code))
 
-        for request_id, exit_code in finished:
+        for run_number, exit_code in finished:
             lifecycle_state = "completed" if exit_code == 0 else "failed"
             self._store.update_lifecycle(
-                request_id=request_id,
+                run_number=run_number,
                 lifecycle_state=lifecycle_state,
                 completed_at=utc_now_iso(),
                 exit_code=exit_code,
             )
-            self._store.release_run_lock(request_id)
-            del self._active_processes[request_id]
+            self._store.release_run_lock(run_number)
+            del self._active_processes[run_number]
 
-    def cancel_run(self, request_id: str) -> CommandRunRecord:
+    def cancel_run(self, run_number: int) -> CommandRunRecord:
         """Cancel the active run and persist lifecycle updates."""
 
         self.reconcile_running_processes()
-        process = self._active_processes.get(request_id)
+        process = self._active_processes.get(run_number)
         if process is None:
-            record = self._store.get_record(request_id)
+            record = self._store.get_record(run_number)
             if record is None:
-                raise KeyError(f"run not found: {request_id}")
+                raise KeyError(f"run not found: {run_number}")
             return record
 
         process.terminate()
@@ -401,28 +507,32 @@ class CommandRunner:
 
         exit_code = process.poll()
         self._store.update_lifecycle(
-            request_id=request_id,
+            run_number=run_number,
             lifecycle_state="canceled",
             completed_at=utc_now_iso(),
             exit_code=exit_code,
         )
-        self._store.release_run_lock(request_id)
-        del self._active_processes[request_id]
-        updated = self._store.get_record(request_id)
+        self._store.release_run_lock(run_number)
+        del self._active_processes[run_number]
+        updated = self._store.get_record(run_number)
         if updated is None:
             raise RuntimeError("Failed to read canceled run record")
         return updated
 
-    def get_run(self, request_id: str) -> CommandRunRecord | None:
+    def get_run(self, run_number: int) -> CommandRunRecord | None:
         self.reconcile_running_processes()
-        return self._store.get_record(request_id)
+        return self._store.get_record(run_number)
 
     def get_active_run(self) -> CommandRunRecord | None:
         self.reconcile_running_processes()
-        active_request_id = self._store.get_active_run_id()
-        if active_request_id is None:
+        active_run_number = self._store.get_active_run_number()
+        if active_run_number is None:
             return None
-        return self._store.get_record(active_request_id)
+        return self._store.get_record(active_run_number)
+
+    def list_recent_runs(self, limit: int = 25) -> list[CommandRunRecord]:
+        self.reconcile_running_processes()
+        return self._store.list_recent_records(limit=limit)
 
     def _serialize_payload(self, request: CommandRequest) -> str:
         payload = {

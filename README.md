@@ -9,6 +9,8 @@ Instead of relying on what political actors say, MoneyTrail makes it possible to
 Scope note: this setup is currently optimized for single-user local operation.
 Operational metadata and QA logs are stored in a local, single-user SQLite database.
 
+Developer notes: [docs/matt-pocock-skills.md](docs/matt-pocock-skills.md)
+
 ## Simple Start
 
 Run from repository root:

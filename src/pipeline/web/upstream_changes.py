@@ -9,7 +9,7 @@ from pathlib import Path
 from statistics import median
 
 
-SUCCESS_FETCH_STATUSES = {"downloaded", "fetched", "success"}
+SUCCESS_FETCH_STATUSES = {"downloaded", "fetched", "not_modified", "success"}
 
 
 @dataclass(frozen=True)

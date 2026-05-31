@@ -10,8 +10,11 @@ import argparse
 import concurrent.futures
 import json
 import shutil
+import sqlite3
+import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -23,6 +26,7 @@ from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, load_data_scope_confi
 
 DEFAULT_TABLES = ("ccl", "cm", "cn", "indiv", "oppexp", "oth", "pas2", "weball")
 DEFAULT_COVERAGE_CONFIG = CANONICAL_DATA_SCOPE_PATH
+_METADATA_DB_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -34,6 +38,7 @@ class DownloadPlan:
     url: str
     zip_path: Path
     meta_path: Path
+    metadata_db_path: Path
 
 
 def repo_root() -> Path:
@@ -180,6 +185,7 @@ def build_plan(cycle: int, table: str, root: Path) -> DownloadPlan:
         url=f"https://www.fec.gov/files/bulk-downloads/{cycle}/{file_stem}.zip",
         zip_path=cycle_dir / f"{file_stem}.zip",
         meta_path=cycle_dir / f".{file_stem}.json",
+        metadata_db_path=root / "db" / "fec-metadata.sqlite",
     )
 
 
@@ -192,6 +198,127 @@ def read_meta(path: Path) -> dict[str, str]:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def metadata_schema_path(root: Path) -> Path:
+    """Return the metadata SQLite schema path."""
+
+    return root / "sql" / "schema" / "001_create_metadata_sqlite.sql"
+
+
+def iso_utc_now() -> str:
+    """Return a UTC timestamp in the same compact form used across ETL metadata."""
+
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_optional_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+def _parse_optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        try:
+            return int(trimmed)
+        except ValueError:
+            return None
+    return None
+
+
+def _local_file_size(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    return path.stat().st_size
+
+
+def record_fetch_history(
+    plan: DownloadPlan,
+    fetch_status: str,
+    cached_meta: dict[str, str],
+    headers: Any = None,
+    *,
+    http_status: int | None = None,
+    content_length: int | None = None,
+    error_text: str | None = None,
+    fetched_at: str | None = None,
+) -> None:
+    """Persist one fetch attempt to the metadata SQLite history store."""
+
+    schema_path = metadata_schema_path(repo_root())
+    resolved_fetched_at = fetched_at or iso_utc_now()
+    resolved_content_length = content_length
+    if resolved_content_length is None and headers is not None:
+        resolved_content_length = _parse_optional_int(headers.get("Content-Length"))
+    if resolved_content_length is None:
+        resolved_content_length = _parse_optional_int(cached_meta.get("content_length"))
+    resolved_last_modified = None
+    resolved_etag = None
+    resolved_response_date = None
+    if headers is not None:
+        resolved_response_date = _normalize_optional_text(headers.get("Date"))
+        resolved_last_modified = _normalize_optional_text(headers.get("Last-Modified"))
+        resolved_etag = _normalize_optional_text(headers.get("ETag"))
+    if resolved_last_modified is None:
+        resolved_last_modified = _normalize_optional_text(cached_meta.get("last_modified"))
+    if resolved_etag is None:
+        resolved_etag = _normalize_optional_text(cached_meta.get("etag"))
+
+    row = (
+        plan.cycle,
+        plan.table,
+        plan.zip_path.name,
+        plan.url,
+        fetch_status,
+        http_status,
+        resolved_content_length,
+        resolved_response_date,
+        resolved_last_modified,
+        resolved_etag,
+        _local_file_size(plan.zip_path),
+        resolved_fetched_at,
+        error_text,
+    )
+
+    plan.metadata_db_path.parent.mkdir(parents=True, exist_ok=True)
+    schema_sql = schema_path.read_text(encoding="utf-8")
+    with _METADATA_DB_LOCK:
+        conn = sqlite3.connect(plan.metadata_db_path, timeout=30)
+        try:
+            conn.execute("PRAGMA busy_timeout = 30000")
+            conn.executescript(schema_sql)
+            conn.execute(
+                """
+                INSERT INTO etl_fetch_history (
+                    cycle,
+                    table_name,
+                    zip_name,
+                    source_url,
+                    fetch_status,
+                    http_status,
+                    content_length,
+                    response_date,
+                    last_modified,
+                    etag,
+                    local_file_size,
+                    fetched_at,
+                    error_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                row,
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def format_bytes(value: int) -> str:
@@ -269,17 +396,57 @@ def download_one(plan: DownloadPlan, force: bool, progress_interval: float) -> s
                 "url": plan.url,
                 "etag": response.headers.get("ETag", ""),
                 "last_modified": response.headers.get("Last-Modified", ""),
+                "response_date": response.headers.get("Date", ""),
                 "content_length": total_header or str(downloaded),
             }
             plan.meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+            record_fetch_history(
+                plan,
+                "downloaded",
+                cached,
+                response.headers,
+                http_status=getattr(response, "status", 200),
+                content_length=total or downloaded,
+            )
             print_progress(plan, downloaded, total, started_at)
             return f"downloaded {plan.zip_path.name} ({downloaded:,} bytes)"
     except HTTPError as exc:
         if exc.code == 304:
+            record_fetch_history(
+                plan,
+                "not_modified",
+                cached,
+                exc.headers,
+                http_status=exc.code,
+            )
             return f"skipped {plan.zip_path.name} (not modified)"
+        record_fetch_history(
+            plan,
+            "failed",
+            cached,
+            exc.headers,
+            http_status=exc.code,
+            error_text=str(exc),
+        )
         raise RuntimeError(f"failed {plan.zip_path.name}: HTTP {exc.code}") from exc
     except URLError as exc:
+        record_fetch_history(
+            plan,
+            "failed",
+            cached,
+            http_status=None,
+            error_text=str(exc.reason),
+        )
         raise RuntimeError(f"failed {plan.zip_path.name}: {exc.reason}") from exc
+    except OSError as exc:
+        record_fetch_history(
+            plan,
+            "failed",
+            cached,
+            http_status=None,
+            error_text=str(exc),
+        )
+        raise
 
 
 def main() -> None:

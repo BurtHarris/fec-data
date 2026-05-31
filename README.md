@@ -54,7 +54,7 @@ duckdb db/fec.duckdb "SELECT table_schema, table_name FROM information_schema.ta
 Optional tool bootstrap on Windows:
 
 ```powershell
-.\scripts\setup-tools.ps1
+./scripts/setup-tools.ps1
 ```
 
 ## Appendix: CLI Debug Options

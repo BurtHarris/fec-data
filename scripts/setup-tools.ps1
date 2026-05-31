@@ -14,6 +14,6 @@
 # by the ETL pipeline.
 #
 # Run from the project root:
-#   .\scripts\setup-tools.ps1
+#   ./scripts/setup-tools.ps1
 
 winget configure -f .config/configuration.winget --accept-configuration-agreements

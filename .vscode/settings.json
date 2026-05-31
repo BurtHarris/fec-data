@@ -6,13 +6,13 @@
         "*.tsv": "duckdb.csvViewer"
     },
     "terminal.integrated.env.windows": {
-        "PATH": "${workspaceFolder}\\scripts;${env:PATH}"
+        "PATH": "${workspaceFolder}/scripts;${env:PATH}"
     },
     "duckdb.databases": [
         {
             "alias": "fec",
             "type": "file",
-            "path": "e:\\fec-data\\db\\fec.duckdb",
+            "path": "${workspaceFolder}/db/fec.duckdb",
             "readOnly": true,
             "attached": false
         }

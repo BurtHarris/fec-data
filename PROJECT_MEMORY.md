@@ -14,6 +14,11 @@ This file captures project-specific lessons learned so they are versioned with t
 - The Python loader extracts each required ZIP entry to `tmp/load-fec/` before `read_csv`, so DuckDB `zipfs` is no longer required for raw loads.
 - Keep explicit table-to-entry ZIP mapping (for example, `ccl -> ccl.txt`, `indiv -> itcont.txt`) to avoid ambiguity, especially for multi-file archives like `indiv`.
 
+## Path Conventions
+
+- Prefer slash-style paths (`/`) in SQL, scripts, and docs to avoid Windows escape-sequence issues.
+- Avoid absolute paths in automated operations; use repo-relative paths or workspace variables where supported.
+
 ## Metadata Modeling Decision
 
 - Raw FEC tables are full-refresh payload tables; row-level load metadata columns are intentionally omitted.

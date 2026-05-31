@@ -54,7 +54,7 @@ tmp/                       # Temp artifacts — git-ignored
 
 Run the provisioning script from the project root:
 ```powershell
-.\scripts\setup-tools.ps1
+./scripts/setup-tools.ps1
 ```
 
 This calls `winget configure` against `.config/configuration.winget` and installs DuckDB CLI, Git, curl, and jq.

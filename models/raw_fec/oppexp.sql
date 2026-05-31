@@ -1,9 +1,11 @@
-DROP TABLE IF EXISTS {TARGET_TABLE};
-CREATE TABLE {TARGET_TABLE} AS
-SELECT
+{{ config(alias=fec_table_alias('oppexp')) }}
+
+-- Operating expenditures. Numeric/date cleanup happens here so downstream
+-- models can query typed DuckDB columns instead of raw text fields.
+select
     CMTE_ID,
     AMNDT_IND,
-    TRY_CAST(NULLIF(TRIM(RPT_YR), '') AS SMALLINT) AS RPT_YR,
+    try_cast(nullif(trim(RPT_YR), '') as smallint) as RPT_YR,
     RPT_TP,
     IMAGE_NUM,
     LINE_NUM,
@@ -12,9 +14,9 @@ SELECT
     NAME,
     CITY,
     STATE,
-    NULLIF(SUBSTR(TRIM(ZIP_CODE), 1, 5), '') AS ZIP_CODE,
-    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
-    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
+    nullif(substr(trim(ZIP_CODE), 1, 5), '') as ZIP_CODE,
+    cast(try_strptime(nullif(trim(TRANSACTION_DT), ''), '%m%d%Y') as date) as TRANSACTION_DT,
+    try_cast(nullif(trim(TRANSACTION_AMT), '') as decimal(14,2)) as TRANSACTION_AMT,
     TRANSACTION_PGI,
     PURPOSE,
     CATEGORY,
@@ -22,12 +24,12 @@ SELECT
     MEMO_CD,
     MEMO_TEXT,
     ENTITY_TP,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID,
-    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
+    try_cast(nullif(trim(SUB_ID), '') as bigint) as SUB_ID,
+    try_cast(nullif(trim(FILE_NUM), '') as bigint) as FILE_NUM,
     TRAN_ID,
     BACK_REF_TRAN_ID
-FROM read_csv(
-    '{SOURCE_PATH}',
+from read_csv(
+    '{{ fec_source_path("oppexp", "oppexp.txt") }}',
     delim='|',
     header=false,
     all_varchar=true,
@@ -61,4 +63,4 @@ FROM read_csv(
         'TRAN_ID':'VARCHAR',
         'BACK_REF_TRAN_ID':'VARCHAR'
     }
-);
+)

@@ -1,15 +1,11 @@
-DROP TABLE IF EXISTS {TARGET_TABLE};
-CREATE TABLE {TARGET_TABLE} AS
-SELECT
+{{ config(alias=fec_table_alias('cn')) }}
+
+-- Candidate master. String-to-number casts are kept close to the raw load.
+select
     CAND_ID,
     CAND_NAME,
     CAND_PTY_AFFILIATION,
-    TRY_CAST(
-        CASE
-            WHEN LENGTH(TRIM(CAND_ELECTION_YR)) = 4 THEN TRIM(CAND_ELECTION_YR)
-            ELSE NULL
-        END AS SMALLINT
-    ) AS CAND_ELECTION_YR,
+    try_cast(case when length(trim(CAND_ELECTION_YR)) = 4 then trim(CAND_ELECTION_YR) end as smallint) as CAND_ELECTION_YR,
     CAND_OFFICE_ST,
     CAND_OFFICE,
     CAND_OFFICE_DISTRICT,
@@ -20,9 +16,9 @@ SELECT
     CAND_ST2,
     CAND_CITY,
     CAND_ST,
-    NULLIF(SUBSTR(TRIM(CAND_ZIP), 1, 5), '') AS CAND_ZIP
-FROM read_csv(
-    '{SOURCE_PATH}',
+    nullif(substr(trim(CAND_ZIP), 1, 5), '') as CAND_ZIP
+from read_csv(
+    '{{ fec_source_path("cn", "cn.txt") }}',
     delim='|',
     header=false,
     all_varchar=true,
@@ -46,4 +42,4 @@ FROM read_csv(
         'CAND_ST':'VARCHAR',
         'CAND_ZIP':'VARCHAR'
     }
-);
+)

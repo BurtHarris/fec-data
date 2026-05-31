@@ -1,175 +1,103 @@
-# FEC Campaign Finance ETL (DuckDB + curl + PowerShell on Windows)
+# MoneyTrail - Follow the money in politics
 
-This repository is set up for an ETL workflow that downloads Federal Election Commission (FEC) campaign finance ZIP files, manages them locally, and loads modeled tables directly into DuckDB native storage.
+“Follow the money.” — Deep Thraot in All the President’s Men
 
-## Key FEC Links
+MoneyTrail is a citizen‑developer project for loading the Federal Election Commission’s bulk data files into a personal OLAP database. Once the data is structured and queryable, it can be used to conduct independent research into who is contributing and spending money in federal elections, and how financial activity shapes our political environment.
 
-- Bulk data portal: https://www.fec.gov/data/browse-data/?tab=bulk-data
-- API landing page: https://www.fec.gov/developers/
-- API documentation: https://api.open.fec.gov/developers/
-- Campaign finance data (browse): https://www.fec.gov/data/
-- Candidate master file and data catalogs: https://www.fec.gov/campaign-finance-data/
-- Electronic filing specifications (formats): https://www.fec.gov/campaign-finance-data/technical-specifications/
+Instead of relying on what political actors say, MoneyTrail makes it possible to observe what they actually do through their financial disclosures.
 
-## API vs Bulk Data (Current Scope)
+Scope note: this setup is currently optimized for single-user local operation.
+Operational metadata and QA logs are stored in a local, single-user SQLite database.
 
-- FEC bulk data provides downloadable files (CSV/ZIP) suitable for repeatable batch ETL.
-- The FEC API provides endpoint-based access for filtered, on-demand retrieval and app integrations.
-- This repository currently uses bulk downloads only.
-- The FEC API is documented here for future use, but API ingestion is not currently part of this ETL setup.
+## Simple Start
 
-## Storage Approach (Current Scope)
+Run from repository root:
 
-- Parquet is not required for this project.
-- Source ZIP files are downloaded and managed in `data/raw/`.
-- DuckDB reads source text/CSV data from extracted files and stores modeled results in the `.duckdb` database file.
+1. Review/edit `config/fec_bulk_coverage.yml` for the cycles/tables you want.
+2. Run:
 
-## Stack
-
-- DuckDB for local analytics database and SQL transforms
-- curl for bulk data downloads
-- PowerShell scripts for repeatable ETL jobs
-- Windows host (PowerShell 7+ recommended)
-
-## Project Structure
-
-```text
-fec-data/
-  .config/
-    configuration.winget  # winget tool provisioning (Microsoft-recommended location)
-  data/
-    raw/         # Downloaded source files (zip/csv/json)
-    staging/     # Unpacked and lightly normalized files
-    processed/   # Curated extracts and export-ready data
-  db/
-    fec.duckdb   # Main DuckDB database file (created at runtime)
-  scripts/
-    setup-tools.ps1
-    enable-fec-data-scripts.ps1
-    fetch-bulk.ps1
-    extract-zips.ps1
-    probe-fec-2026.ps1
-    generate-diagram.ps1
-  sql/
-    schema/      # CREATE TABLE / DDL files
-    transform/   # INSERT...SELECT / merge / cleanup SQL
-    qa/          # QA checks and ad hoc queries
-  logs/          # ETL run logs
-  tmp/           # Temporary work artifacts
+```powershell
+uv sync
+uv run download --cycles 2026
+uv run load --cycle 2026
 ```
 
-Note: `data/`, local `db/` artifacts, `logs/`, and `tmp/` are intended for local runtime files and are git-ignored via `.gitignore` (folder placeholders are kept with `.gitkeep`).
+That is the default workflow.
+
+## What You Get
+
+- ZIP files cached under `data/<cycle>/`
+- Raw tables in DuckDB such as `raw_fec.cm_2026`
+- Benchmark outputs in `logs/load-timing/`
+
+Quick check:
+
+```powershell
+duckdb db/fec.duckdb "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema='raw_fec' ORDER BY table_name;"
+```
+
+## Prerequisites
+
+- Python 3.11+
+- `uv`
+- DuckDB CLI (optional, but useful for inspection)
+- SQLite (uses Python built-in `sqlite3`; no separate install required)
+
+Optional tool bootstrap on Windows:
+
+```powershell
+./scripts/setup-tools.ps1
+```
 
 ## HTML Artifact Preview
 
-This repo keeps several committed, self-contained HTML artifacts under `artifacts/` for analysis notes, diagrams, reviews, and reports. For this project, the recommended in-editor preview workflow is the official VS Code Live Preview extension (`ms-vscode.live-server`), which is listed in the workspace recommendations.
+This repo keeps committed, self-contained HTML artifacts under `artifacts/` for analysis notes, diagrams, reviews, and reports. For this project, the recommended in-editor preview workflow is the official VS Code Live Preview extension (`ms-vscode.live-server`), which is listed in the workspace recommendations.
 
-Use it when you want to inspect files like `artifacts/analysis/*.html` without leaving VS Code:
+When opening HTML artifacts in this project, prefer the rendered view over raw source whenever practical.
 
+Option A: Built-in browser rendering (Live Preview)
 1. Open an HTML artifact file.
 2. Run `Live Preview: Show Preview` from the Command Palette.
 3. Keep the preview beside the editor while you iterate on the file.
 
+Option B: Visual editor workflow (WYSIWYG HTML Editor)
+1. Open an HTML file.
+2. Run `WYSIWYG HTML: Open WYSIWYG Editor` from the Command Palette.
+3. Edit in visual mode with bidirectional sync back to source.
+
 For a final rendering check, open the same file in your normal browser as well.
 
-## Prerequisites (Windows)
-
-Install:
-
-1. DuckDB CLI
-2. curl
-3. PowerShell 7+
-
-Verify tools:
+Validate HTML links (local + remote):
 
 ```powershell
-duckdb --version
-curl --version
-$PSVersionTable.PSVersion
+.\scripts\check-html-links.ps1
 ```
 
-### Optional: Provision or Update Tools with winget configure
+This writes a JSON report to `tmp/html_link_check_artifacts.json` and exits non-zero if broken links are found.
 
-This repository includes a Windows package provisioning file at `.config/configuration.winget` (the [Microsoft-recommended naming convention](https://learn.microsoft.com/en-us/windows/package-manager/configuration/create#file-naming-convention)).
+## CLI Commands
 
-Run from project root:
+The repository now standardizes on the dbt `zipfs` loader path.
+
+### Performance Benchmark (Kept for Future Tests)
 
 ```powershell
-.\scripts\setup-tools.ps1
+uv run benchmark-load --cycle 2026 --tables indiv oppexp oth pas2 --warmup --dbt-threads 1
 ```
 
-This script is **run manually by choice** — it is never called automatically by the ETL pipeline. It is safe to rerun at any time: `winget configure` is idempotent and will install missing tools or upgrade existing ones to the configured version.
+This writes CSV results to `logs/load-timing/` and run artifacts to `tmp/benchmark-load/`.
 
-The configuration installs:
-
-- DuckDB CLI (`DuckDB.cli`)
-- curl (`cURL.cURL`)
-- jq (`jqlang.jq`)
-
-## Quick Start
-
-1. Create the DuckDB file:
+### Common Recovery
 
 ```powershell
-duckdb db/fec.duckdb ".databases"
+uv sync
+uv run download --cycles 2026 --force
+uv run load --cycle 2026 --dbt-threads 1
 ```
 
-2. Add schema SQL files in `sql/schema/`.
-
-3. Add a fetch script in `scripts/` (example command pattern):
+For all advanced flags, use:
 
 ```powershell
-curl -L "https://www.fec.gov/files/bulk-downloads/2024/indiv24.zip" -o data/raw/indiv24.zip
+uv run load --help
+uv run benchmark-load --help
 ```
-
-For the FEC bulk downloader in PowerShell, which caches the raw ZIP artifacts for DuckDB to read directly:
-
-```powershell
-.\scripts\fetch-bulk.ps1 2020
-```
-
-For load timing comparison runs (for example, `main` vs a feature branch), pass a timing label:
-
-```powershell
-.\scripts\load-fec-duckdb.ps1 -Cycle 2026 -Tables cm,cn,indiv -TimingLabel main
-.\scripts\load-fec-duckdb.ps1 -Cycle 2026 -Tables cm,cn,indiv -TimingLabel feature
-```
-
-The script writes per-table timing CSV files to `logs/load-timing/` with git commit and tree-state metadata.
-
-To make the repo scripts callable by name from terminal, add the repo `scripts` folder to your PowerShell PATH:
-
-```powershell
-.\scripts\enable-fec-data-scripts.ps1 -Persist
-```
-
-That appends the repo `scripts` directory to your PowerShell profile PATH.
-
-4. Load and transform with DuckDB:
-
-```powershell
-duckdb db/fec.duckdb -c ".read sql/schema/001_base_tables.sql"
-duckdb db/fec.duckdb -c ".read sql/transform/010_load_individual_contributions.sql"
-```
-
-## Recommended Conventions
-
-- Keep raw source files immutable in `data/raw/`.
-- Manage and track downloaded ZIP files in `data/raw/`.
-- Write all transformations as SQL in `sql/transform/` when possible.
-- Use PowerShell for all project scripting and orchestration.
-- Name SQL files with numeric prefixes for deterministic order:
-  - `001_...sql`, `010_...sql`, `020_...sql`
-- Keep scripts idempotent so reruns are safe.
-- Log all pipeline runs to `logs/`.
-- Track load provenance in `etl.load_history`; keep raw load tables payload-only.
-
-## Project Memory
-
-- Repository-specific lessons learned and implementation notes are tracked in `PROJECT_MEMORY.md`.
-
-## Next Steps
-
-- Add the first source-specific downloader in `scripts/`.
-- Define base tables in `sql/schema/`.
-- Add one end-to-end PowerShell run script that calls fetch, then load, then QA checks.

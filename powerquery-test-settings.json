@@ -1,4 +1,4 @@
 {
   "environment": "Development",
-  "dataSource": "path/to/your/data/source"
+  "dataSource": "./db/fec.duckdb"
 }

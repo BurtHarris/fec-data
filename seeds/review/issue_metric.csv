@@ -1,0 +1,7 @@
+issue_metric_id,issue_id,metric_name,metric_value,metric_unit,measured_at,query_text
+1,1,null_row_count,989,rows,2026-05-29 17:10:00,select count(*) from raw_fec.pas2_2026 where CAND_ID is null
+2,1,affected_amount,2172056,dollars,2026-05-29 17:10:00,select sum(TRANSACTION_AMT) from raw_fec.pas2_2026 where CAND_ID is null
+3,1,unique_inferred_rows,984,rows,2026-05-29 17:10:00,count null rows with exactly one candidate via OTHER_ID to ccl_2026
+4,1,ambiguous_inferred_rows,5,rows,2026-05-29 17:10:00,count null rows with more than one candidate via OTHER_ID to ccl_2026
+5,2,affected_row_count,2,rows,2026-05-29 17:10:00,count pas2 rows where OTHER_ID = C00799767 and CAND_ID is null
+6,2,affected_amount,7500,dollars,2026-05-29 17:10:00,sum pas2 amount where OTHER_ID = C00799767 and CAND_ID is null

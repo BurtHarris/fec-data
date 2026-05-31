@@ -1,0 +1,163 @@
+version: 2
+
+models:
+  - name: ccl
+    description: "Candidate committee linkage file loaded from the FEC bulk ZIP."
+    meta:
+      source_entry: ccl.txt
+    columns:
+      - name: CAND_ID
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cn')
+                field: CAND_ID
+              config:
+                severity: warn
+      - name: CMTE_ID
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cm')
+                field: CMTE_ID
+              config:
+                severity: warn
+
+  - name: cm
+    description: "Committee master file loaded from the FEC bulk ZIP."
+    meta:
+      source_entry: cm.txt
+      zip_columns:
+        - CMTE_ZIP
+    columns:
+      - name: CMTE_ID
+        tests: [not_null, unique]
+      - name: CAND_ID
+        tests:
+          - relationships:
+              arguments:
+                to: ref('cn')
+                field: CAND_ID
+              config:
+                severity: warn
+
+  - name: cn
+    description: "Candidate master file loaded from the FEC bulk ZIP."
+    meta:
+      source_entry: cn.txt
+      zip_columns:
+        - CAND_ZIP
+    columns:
+      - name: CAND_ID
+        tests: [not_null, unique]
+      - name: CAND_PCC
+        tests:
+          - relationships:
+              arguments:
+                to: ref('cm')
+                field: CMTE_ID
+              config:
+                severity: warn
+
+  - name: indiv
+    description: "Individual contributions loaded from the FEC bulk ZIP."
+    meta:
+      source_entry: itcont.txt
+      zip_columns:
+        - ZIP_CODE
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+      - name: CMTE_ID
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cm')
+                field: CMTE_ID
+              config:
+                severity: warn
+
+  - name: oppexp
+    description: "Operating expenditures loaded from the FEC bulk ZIP."
+    meta:
+      source_entry: oppexp.txt
+      zip_columns:
+        - ZIP_CODE
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+      - name: CMTE_ID
+        tests:
+          - relationships:
+              arguments:
+                to: ref('cm')
+                field: CMTE_ID
+              config:
+                severity: warn
+
+  - name: oth
+    description: "Other committee transactions loaded from the FEC bulk ZIP."
+    meta:
+      source_entry: itoth.txt
+      zip_columns:
+        - ZIP_CODE
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+      - name: CMTE_ID
+        tests:
+          - relationships:
+              arguments:
+                to: ref('cm')
+                field: CMTE_ID
+              config:
+                severity: warn
+
+  - name: pas2
+    description: "Contributions to candidates from committees loaded from the FEC bulk ZIP."
+    meta:
+      source_entry: itpas2.txt
+      zip_columns:
+        - ZIP_CODE
+    columns:
+      - name: SUB_ID
+        tests: [not_null]
+      - name: CMTE_ID
+        tests:
+          - relationships:
+              arguments:
+                to: ref('cm')
+                field: CMTE_ID
+              config:
+                severity: warn
+      - name: CAND_ID
+        tests:
+          - not_null:
+              # The 2026 file currently contains some rows without CAND_ID.
+              # Keep this visible, but do not fail the whole local load.
+              config:
+                severity: warn
+          - relationships:
+              arguments:
+                to: ref('cn')
+                field: CAND_ID
+              config:
+                severity: warn
+
+  - name: weball
+    description: "Candidate summary file loaded from the FEC bulk ZIP."
+    meta:
+      source_entry_template: weball{{cycle_suffix}}.txt
+    columns:
+      - name: CAND_ID
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cn')
+                field: CAND_ID
+              config:
+                severity: warn

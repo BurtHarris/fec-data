@@ -1,6 +1,7 @@
-DROP TABLE IF EXISTS {TARGET_TABLE};
-CREATE TABLE {TARGET_TABLE} AS
-SELECT
+{{ config(alias=fec_table_alias('oth')) }}
+
+-- Other committee transactions share the same layout as individual contributions.
+select
     CMTE_ID,
     AMNDT_IND,
     RPT_TP,
@@ -11,20 +12,19 @@ SELECT
     NAME,
     CITY,
     STATE,
-    NULLIF(SUBSTR(TRIM(ZIP_CODE), 1, 5), '') AS ZIP_CODE,
+    nullif(substr(trim(ZIP_CODE), 1, 5), '') as ZIP_CODE,
     EMPLOYER,
     OCCUPATION,
-    CAST(TRY_STRPTIME(NULLIF(TRIM(TRANSACTION_DT), ''), '%m%d%Y') AS DATE) AS TRANSACTION_DT,
-    TRY_CAST(NULLIF(TRIM(TRANSACTION_AMT), '') AS DECIMAL(14,2)) AS TRANSACTION_AMT,
+    cast(try_strptime(nullif(trim(TRANSACTION_DT), ''), '%m%d%Y') as date) as TRANSACTION_DT,
+    try_cast(nullif(trim(TRANSACTION_AMT), '') as decimal(14,2)) as TRANSACTION_AMT,
     OTHER_ID,
-    CAND_ID,
     TRAN_ID,
-    TRY_CAST(NULLIF(TRIM(FILE_NUM), '') AS BIGINT) AS FILE_NUM,
+    try_cast(nullif(trim(FILE_NUM), '') as bigint) as FILE_NUM,
     MEMO_CD,
     MEMO_TEXT,
-    TRY_CAST(NULLIF(TRIM(SUB_ID), '') AS BIGINT) AS SUB_ID
-FROM read_csv(
-    '{SOURCE_PATH}',
+    try_cast(nullif(trim(SUB_ID), '') as bigint) as SUB_ID
+from read_csv(
+    '{{ fec_source_path("oth", "itoth.txt") }}',
     delim='|',
     header=false,
     all_varchar=true,
@@ -48,11 +48,10 @@ FROM read_csv(
         'TRANSACTION_DT':'VARCHAR',
         'TRANSACTION_AMT':'VARCHAR',
         'OTHER_ID':'VARCHAR',
-        'CAND_ID':'VARCHAR',
         'TRAN_ID':'VARCHAR',
         'FILE_NUM':'VARCHAR',
         'MEMO_CD':'VARCHAR',
         'MEMO_TEXT':'VARCHAR',
         'SUB_ID':'VARCHAR'
     }
-);
+)

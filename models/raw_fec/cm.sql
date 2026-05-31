@@ -1,6 +1,7 @@
-DROP TABLE IF EXISTS {TARGET_TABLE};
-CREATE TABLE {TARGET_TABLE} AS
-SELECT
+{{ config(alias=fec_table_alias('cm')) }}
+
+-- Committee master. dbt owns table creation; this select defines table contents.
+select
     CMTE_ID,
     CMTE_NM,
     TRES_NM,
@@ -8,7 +9,7 @@ SELECT
     CMTE_ST2,
     CMTE_CITY,
     CMTE_ST,
-    NULLIF(SUBSTR(TRIM(CMTE_ZIP), 1, 5), '') AS CMTE_ZIP,
+    nullif(substr(trim(CMTE_ZIP), 1, 5), '') as CMTE_ZIP,
     CMTE_DSGN,
     CMTE_TP,
     CMTE_PTY_AFFILIATION,
@@ -16,8 +17,8 @@ SELECT
     ORG_TP,
     CONNECTED_ORG_NM,
     CAND_ID
-FROM read_csv(
-    '{SOURCE_PATH}',
+from read_csv(
+    '{{ fec_source_path("cm", "cm.txt") }}',
     delim='|',
     header=false,
     all_varchar=true,
@@ -41,4 +42,4 @@ FROM read_csv(
         'CONNECTED_ORG_NM':'VARCHAR',
         'CAND_ID':'VARCHAR'
     }
-);
+)

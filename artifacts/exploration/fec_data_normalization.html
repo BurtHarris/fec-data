@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEC Data Normalization and PowerBI Model Standards</title>
+    <title>FEC Data Normalization and Semantic Model Notes</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -28,8 +28,8 @@
     </style>
 </head>
 <body>
-<h1>FEC Data Normalization and PowerBI Model Standards</h1>
-<p>This document outlines the established standards for normalizing FEC data and creating a PowerBI-friendly semantic model. The goal is to unify the FEC&rsquo;s disparate naming conventions and data structures into a consistent, readable, and performant model.</p>
+<h1>FEC Data Normalization and Semantic Model Notes</h1>
+<p>This document summarizes current normalization guidance for this repository and a PowerBI-friendly semantic model direction. The goal is to unify the FEC&rsquo;s disparate naming conventions and data structures into a consistent, readable, and performant model.</p>
 <h2>1. Snowflake Schema Overview</h2>
 <p>The snowflake schema is a logical arrangement of tables in a database that supports efficient querying and reporting. It consists of:</p>
 <ul>
@@ -42,16 +42,16 @@
 <ul>
 <li><strong>Candidate Dimension</strong>: Contains detailed information about candidates, such as name, party affiliation, and state. <em>Loaded from:</em> <strong>FEC Candidate Bulk File</strong> and described in the <a href="https://www.fec.gov/campaign-finance-data/candidate-master-file-description/">Candidate Master File Description</a>.</li>
 <li><strong>Committee Dimension</strong>: Includes committee names, types, and associated candidates. <em>Loaded from:</em> <strong>FEC Committee Bulk File</strong> and described in the <a href="https://www.fec.gov/campaign-finance-data/committee-master-file-description/">Committee Master File Description</a>.</li>
-<li><strong>Election Dimension</strong>: Defines election years, types (e.g., general, primary), and associated offices. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/election-cycle-descriptions/">Election Cycle Descriptions</a>.</li>
-<li><strong>Time Dimension</strong>: Organizes time data based on the FEC&rsquo;s 2-year election cycle concept, including attributes such as cycle, year, quarter, month, week, and day, to support time-based analysis and reporting. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/election-cycle-descriptions/">Election Cycle Descriptions</a>.</li>
+<li><strong>Election Dimension</strong>: Defines election years, types (e.g., general, primary), and associated offices. <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
+<li><strong>Time Dimension</strong>: Organizes time data based on the FEC&rsquo;s 2-year election cycle concept, including attributes such as cycle, year, quarter, month, week, and day, to support time-based analysis and reporting. <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
 <li><strong>Party Dimension</strong>: Includes attributes such as Party Code and Party Name. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/party-code-descriptions/">Party Code Descriptions</a>.</li>
 <li><strong>Office Dimension</strong>: Includes attributes such as Office Code, Office Name (e.g., Senate, House, President), and State. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/candidate-master-file-description/">Candidate Master File Description</a>.</li>
-<li><strong>Election Type Dimension</strong>: Includes attributes such as Election Type Code and Election Type Name (e.g., General, Primary, Special). <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/election-type-descriptions/">Election Type Descriptions</a>.</li>
-<li><strong>Committee Type Dimension</strong>: Defines the type of committee (e.g., PAC, Party, Candidate Committee). Attributes include Committee Type Code and Committee Type Name. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/committee-type-descriptions/">Committee Type Descriptions</a>.</li>
-<li><strong>Committee Designation Dimension</strong>: Specifies the designation of committees (e.g., Authorized, Unauthorized, Leadership). Attributes include Designation Code and Designation Name. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/committee-designation-descriptions/">Committee Designation Descriptions</a>.</li>
-<li><strong>Filing Frequency Dimension</strong>: Represents the filing frequency of committees (e.g., Quarterly, Monthly). Attributes include Filing Frequency Code and Filing Frequency Description. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/filing-frequency-descriptions/">Filing Frequency Descriptions</a>.</li>
-<li><strong>Organization Type Dimension</strong>: Defines the type of organization (e.g., Corporation, Labor Organization). Attributes include Organization Type Code and Organization Type Description. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/organization-type-descriptions/">Organization Type Descriptions</a>.</li>
-<li><strong>Linkage Type Dimension</strong>: Represents the type of linkage between candidates and committees. Attributes include Linkage Type Code and Linkage Type Description. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/linkage-type-descriptions/">Linkage Type Descriptions</a>.</li>
+<li><strong>Election Type Dimension</strong>: Includes attributes such as Election Type Code and Election Type Name (e.g., General, Primary, Special). <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
+<li><strong>Committee Type Dimension</strong>: Defines the type of committee (e.g., PAC, Party, Candidate Committee). Attributes include Committee Type Code and Committee Type Name. <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
+<li><strong>Committee Designation Dimension</strong>: Specifies the designation of committees (e.g., Authorized, Unauthorized, Leadership). Attributes include Designation Code and Designation Name. <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
+<li><strong>Filing Frequency Dimension</strong>: Represents the filing frequency of committees (e.g., Quarterly, Monthly). Attributes include Filing Frequency Code and Filing Frequency Description. <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
+<li><strong>Organization Type Dimension</strong>: Defines the type of organization (e.g., Corporation, Labor Organization). Attributes include Organization Type Code and Organization Type Description. <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
+<li><strong>Linkage Type Dimension</strong>: Represents the type of linkage between candidates and committees. Attributes include Linkage Type Code and Linkage Type Description. <em>Derived from:</em> <a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>.</li>
 <li><strong>Transaction Code Dimension</strong>: Includes attributes such as Transaction Type Code, Purpose Code, Line Number, and Memo Code. <em>Derived from:</em> <a href="https://www.fec.gov/campaign-finance-data/transaction-type-code-descriptions/">Transaction Type Code Descriptions</a>.</li>
 </ul>
 <h2>3. Fact Tables</h2>
@@ -64,38 +64,50 @@
 </ul>
 <h2>4. Standardized Table Names for Bulk CSV Imports</h2>
 <p>Bulk files have names like <code>itcont.txt</code>, <code>cn.txt</code>, <code>pas2.txt</code>, etc. These are renamed to meaningful names in the semantic model.</p>
-<h3>PowerBI and DuckDB Table Names</h3>
+<h3>Raw FEC Model and Source Entry Mapping</h3>
 <table border="1">
 <thead>
 <tr>
-<th>PowerBI / Duckdb Table Name</th>
-<th>Source and (Examples for 2026 cycle)</th>
+<th>Raw Model Name</th>
+<th>Source Entry and Example ZIP (2026)</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>Candidate</code></td>
+<td><code>cn</code></td>
 <td><code>cn.txt in cn26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/cn26.zip">2026 ZIP</a>)</td>
 </tr>
 <tr>
-<td><code>Committee</code></td>
+<td><code>cm</code></td>
 <td><code>cm.txt in cm26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/cm26.zip">2026 ZIP</a>)</td>
 </tr>
 <tr>
-<td><code>Links</code></td>
-<td><code>ccl.txt (candidate committee links)</code></td>
+<td><code>ccl</code></td>
+<td><code>ccl.txt in ccl26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/ccl26.zip">2026 ZIP</a>)</td>
 </tr>
 <tr>
-<td><code>Contributions</code></td>
-<td><code>itcont.txt</code></td>
+<td><code>indiv</code></td>
+<td><code>itcont.txt in indiv26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/indiv26.zip">2026 ZIP</a>)</td>
 </tr>
 <tr>
-<td><code>Disbursements and Expenditures</code></td>
-<td><code>pas226.zip</code> (includes both disbursements and independent expenditures)</td>
+<td><code>oppexp</code></td>
+<td><code>oppexp.txt in oppexp26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/oppexp26.zip">2026 ZIP</a>)</td>
+</tr>
+<tr>
+<td><code>oth</code></td>
+<td><code>itoth.txt in oth26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/oth26.zip">2026 ZIP</a>)</td>
+</tr>
+<tr>
+<td><code>pas2</code></td>
+<td><code>itpas2.txt in pas226.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/pas226.zip">2026 ZIP</a>)</td>
+</tr>
+<tr>
+<td><code>weball</code></td>
+<td><code>weball26.txt in weball26.zip</code> (<a href="https://www.fec.gov/files/bulk-downloads/2026/weball26.zip">2026 ZIP</a>)</td>
 </tr>
 </tbody>
 </table>
-<p>These names ensure compatibility with both PowerBI and DuckDB, leveraging DuckDB&rsquo;s high-performance columnar format for efficient querying.</p>
+<p>These mappings align the current raw model names with the FEC bulk source entries used by the loader.</p>
 <h2>5. Standardized Column Names Across All Sources</h2>
 <p>The FEC mixes column naming conventions:</p>
 <ul>
@@ -163,10 +175,10 @@
 </table>
 <p>This makes DAX and Power Query dramatically easier to read.</p>
 <h2>6. Conclusion</h2>
-<p>This document provides a comprehensive approach to normalizing FEC data for PowerBI. By adopting a snowflake schema, standardizing table and column names, and ensuring compatibility with DuckDB, the ETL workflows and PowerBI modeling are optimized for clarity and performance.</p>
+<p>This document provides a practical normalization approach for this repository and downstream BI usage. By standardizing table and column names and keeping mappings explicit, ETL workflows and reporting models are easier to maintain.</p>
 <h2>Semantic Model Diagram</h2>
 <p>The following diagram illustrates the semantic model, including fact tables and dimensions, as described in the FEC data normalization process:</p>
 <img src="../diagrams/semantic_model_diagram.svg" alt="Semantic Model Diagram" style="max-width:100%; height:auto;">
-<p>For the source and editable version of this diagram, see the <a href="/artifacts/diagrams/semantic_model_diagram.md">Markdown/mermaid source</a>.</p>
+<p>For the source and editable version of this diagram, see the <a href="../diagrams/semantic_model_diagram.md">Markdown/mermaid source</a>.</p>
 </body>
 </html>

@@ -1,22 +1,31 @@
 {
     "workbench.editorAssociations": {
         "*.copilotmd": "vscode.markdown.preview.editor",
-        "*.parquet": "duckdb.dataFileViewer",
-        "*.csv": "duckdb.dataFileViewer",
-        "*.tsv": "duckdb.dataFileViewer",
-        "*.xlsx": "duckdb.dataFileViewer"
+        "*.parquet": "duckdb.parquetViewer",
+        "*.csv": "duckdb.csvViewer",
+        "*.tsv": "duckdb.csvViewer",
+        "*.xlsx": "duckdb.dataFileViewer",
+        "*.html": "default"
     },
+    "livePreview.openPreviewTarget": "Embedded Preview",
+    "livePreview.useIntegratedBrowser": true,
     "terminal.integrated.env.windows": {
-        "PATH": "${workspaceFolder}\\scripts;${env:PATH}"
+        "PATH": "${workspaceFolder}/scripts;${env:PATH}"
     },
     "duckdb.databases": [
         {
             "alias": "fec",
             "type": "file",
-            "path": "e:\\fec-data\\db\\fec.duckdb",
+            "path": "${workspaceFolder}/db/fec.duckdb",
             "readOnly": true,
             "attached": false
         }
     ],
-    "duckdb.defaultDatabase": "fec"
+    "duckdb.defaultDatabase": "fec",
+    "chat.tools.terminal.autoApprove": {
+        "/^uv run dbt test --profiles-dir \\. --vars \"\\{cycle: 2026\\}\" --select raw_fec$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }

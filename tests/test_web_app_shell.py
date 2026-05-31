@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH
 from pipeline.web.app import SCREEN_ROUTES, create_app, render_shell
@@ -389,7 +389,8 @@ table_groups:
         self.assertIn(">1<", html)
         self.assertIn("rejected", html)
         self.assertIn("completed", html)
-        self.assertIn("logs\\run-1.log", html)
+        self.assertIn("href='/history/logs/1'", html)
+        self.assertIn(">View log</a>", html)
 
     def test_history_route_renders_empty_state(self) -> None:
         app = create_app(runner=_StubRunner())
@@ -400,6 +401,81 @@ table_groups:
         html = response.body.decode("utf-8")
 
         self.assertIn("No persisted Workflow Runs yet.", html)
+
+    def test_history_log_route_serves_saved_log_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            log_path = root / "logs" / "ops-web" / "run-1.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text("line 1\nline 2\n", encoding="utf-8")
+
+            runner = _StubRunner()
+            runner._records = {
+                1: CommandRunRecord(
+                    run_number=1,
+                    requested_at="2026-05-31T13:00:00Z",
+                    operator_id="alice",
+                    command="fetch",
+                    payload_json="{}",
+                    admission_status="admitted",
+                    rejection_reason=None,
+                    launch_status="launched",
+                    launch_error=None,
+                    launched_at="2026-05-31T13:00:05Z",
+                    pid=111,
+                    command_line="uv run download",
+                    log_path=str(log_path),
+                    lifecycle_state="completed",
+                    completed_at="2026-05-31T13:10:00Z",
+                    exit_code=0,
+                )
+            }
+            app = create_app(repo_root_path=root, runner=runner)
+            route = next((route for route in app.routes if getattr(route, "path", None) == "/history/logs/{run_number}"), None)
+            assert route is not None
+
+            response = route.endpoint(1)
+            body = response.body.decode("utf-8")
+
+        self.assertEqual(response.media_type, "text/plain")
+        self.assertEqual(body, "line 1\nline 2\n")
+
+    def test_history_log_route_rejects_paths_outside_repo_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            outside_path = root / "tmp" / "outside.log"
+            outside_path.parent.mkdir(parents=True, exist_ok=True)
+            outside_path.write_text("outside\n", encoding="utf-8")
+
+            runner = _StubRunner()
+            runner._records = {
+                1: CommandRunRecord(
+                    run_number=1,
+                    requested_at="2026-05-31T13:00:00Z",
+                    operator_id="alice",
+                    command="fetch",
+                    payload_json="{}",
+                    admission_status="admitted",
+                    rejection_reason=None,
+                    launch_status="launched",
+                    launch_error=None,
+                    launched_at="2026-05-31T13:00:05Z",
+                    pid=111,
+                    command_line="uv run download",
+                    log_path=str(outside_path),
+                    lifecycle_state="completed",
+                    completed_at="2026-05-31T13:10:00Z",
+                    exit_code=0,
+                )
+            }
+            app = create_app(repo_root_path=root, runner=runner)
+            route = next((route for route in app.routes if getattr(route, "path", None) == "/history/logs/{run_number}"), None)
+            assert route is not None
+
+            with self.assertRaises(HTTPException) as raised:
+                route.endpoint(1)
+
+        self.assertEqual(raised.exception.status_code, 404)
 
     def test_upstream_changes_route_renders_empty_state_when_db_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

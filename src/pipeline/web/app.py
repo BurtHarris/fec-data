@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, Field
 import yaml
 
@@ -317,14 +317,34 @@ def _render_table(headers: list[str], rows: list[list[str]]) -> str:
     )
 
 
-def _render_log_cell(log_path: str | None) -> str:
+def _render_log_cell(run_number: int | None, log_path: str | None, *, internal_link: bool = False) -> str:
     if not log_path:
         return "n/a"
+    if internal_link and run_number is not None:
+        href = f"/history/logs/{run_number}"
+        return f"<a href='{escape(href)}'>View log</a>"
     try:
         href = Path(log_path).as_uri()
         return f"<a href='{escape(href)}'>{escape(log_path)}</a>"
     except ValueError:
         return escape(log_path)
+
+
+def _resolve_history_log_path(repo_root_path: Path, record: CommandRunRecord) -> Path:
+    if not record.log_path:
+        raise HTTPException(status_code=404, detail="log not found")
+
+    candidate = Path(record.log_path)
+    if not candidate.is_absolute():
+        candidate = repo_root_path / candidate
+
+    resolved = candidate.resolve()
+    logs_root = (repo_root_path / "logs").resolve()
+    if not resolved.is_relative_to(logs_root):
+        raise HTTPException(status_code=404, detail="log not found")
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="log not found")
+    return resolved
 
 
 def _format_record(record: CommandRunRecord) -> str:
@@ -485,7 +505,7 @@ def _render_history(records: list[CommandRunRecord]) -> str:
             escape(record.launched_at or "n/a"),
             escape(record.completed_at or "n/a"),
             escape(str(record.exit_code) if record.exit_code is not None else "n/a"),
-            _render_log_cell(record.log_path),
+            _render_log_cell(record.run_number, record.log_path, internal_link=True),
             escape(str(record.run_number) if record.run_number is not None else "n/a"),
         ]
         for record in records
@@ -589,7 +609,7 @@ def _render_runs(
                 escape(record.lifecycle_state),
                 escape(record.admission_status),
                 escape(str(record.exit_code) if record.exit_code is not None else "n/a"),
-                _render_log_cell(record.log_path),
+                _render_log_cell(record.run_number, record.log_path),
             ]
             for record in recent_runs
         ]
@@ -842,6 +862,14 @@ def create_app(
     @app.get("/history", response_class=HTMLResponse, include_in_schema=False)
     def history() -> HTMLResponse:
         return HTMLResponse(content=_render_history(app_runner.list_recent_runs(limit=25)))
+
+    @app.get("/history/logs/{run_number}", response_class=PlainTextResponse, include_in_schema=False)
+    def history_log(run_number: int) -> PlainTextResponse:
+        record = app_runner.get_run(run_number)
+        if record is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        log_path = _resolve_history_log_path(resolved_repo_root, record)
+        return PlainTextResponse(log_path.read_text(encoding="utf-8"))
 
     @app.get("/upstream-changes", response_class=HTMLResponse, include_in_schema=False)
     def upstream_changes() -> HTMLResponse:

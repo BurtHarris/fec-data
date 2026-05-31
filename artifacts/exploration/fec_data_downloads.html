@@ -30,7 +30,7 @@
     <li><a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">Bulk data downloads</a>: Suitable for in-depth analysis using local database tools like DuckDB.</li>
     <li><a href="https://api.open.fec.gov/developers/">OpenFEC API</a>: A web-based API designed for software developers to integrate FEC data into applications.</li>
 </ul>
-<p><strong>Note:</strong> This <strong>fec-data</strong> repository focuses on the bulk data download approach, implementing an ETL workflow for Windows using tools like DuckDB and Power BI.</p>
+<p><strong>Note:</strong> This <strong>fec-data</strong> repository focuses on the bulk data download approach, implementing a local DuckDB ETL workflow on Windows.</p>
 
 <h2>Challenges in Naming Conventions</h2>
 <p>"Naming things" is a well-known challenge in software development, and the FEC data sources are no exception. The three access methods listed above often use inconsistent naming conventions, which can complicate data integration and analysis. To address this, it is often necessary to establish consistent naming conventions when working with tools like DuckDB and Power BI.</p>
@@ -38,22 +38,20 @@
 <h2>Directory Structure Overview</h2>
 <p>The FEC data is organized into the following structure to facilitate efficient ETL workflows and analysis:</p>
 <ul>
-    <li><strong>Raw Data</strong>: Immutable source files downloaded directly from the FEC bulk data portal. Stored in <code>data/raw/</code>.</li>
-    <li><strong>Staging Data</strong>: Unpacked and normalized files prepared for loading. Stored in <code>data/staging/</code>.</li>
-    <li><strong>Processed Data</strong>: Curated extracts ready for analysis. Stored in <code>data/processed/</code>.</li>
-    <li><strong>Database</strong>: DuckDB files containing OLAP tables for longitudinal reporting. Stored in <code>db/</code>.</li>
-    <li><strong>Logs</strong>: ETL run logs for debugging and auditing. Stored in <code>logs/</code>.</li>
-    <li><strong>Temporary Files</strong>: Intermediate artifacts generated during ETL runs. Stored in <code>tmp/</code>.</li>
+    <li><strong>Cycle ZIP Cache</strong>: Source ZIP files are cached under <code>data/&lt;cycle&gt;/</code> (for example, <code>data/2026/</code>).</li>
+    <li><strong>Database</strong>: DuckDB files are stored in <code>db/</code>.</li>
+    <li><strong>Logs</strong>: ETL run logs and benchmark timing outputs are stored in <code>logs/</code>.</li>
+    <li><strong>Temporary Files</strong>: Intermediate benchmark and run artifacts are stored in <code>tmp/</code>.</li>
 </ul>
-<p>This structure ensures that raw data remains untouched, while transformations and analyses are performed downstream. It also aligns with best practices for reproducibility and data integrity.</p>
+<p>This structure keeps source ZIP files immutable and supports reproducible local ETL runs.</p>
 
 <h2>Schema Design and Mapping</h2>
-<p>To support both SQL/DuckDB operations and Power BI integration, the following schema-related directories are included:</p>
+<p>To support SQL/DuckDB operations and model-driven loading, the following schema-related locations are used:</p>
 <ul>
-    <li><strong>SQL Schemas</strong>: Contains DuckDB-compatible DDL scripts for creating and managing database tables. Stored in <code>sql/schema/</code>.</li>
-    <li><strong>Power BI Mappings</strong>: Includes schema mapping files and metadata for Power BI integration. Stored in <code>artifacts/mappings/</code>.</li>
-    <li><a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Schemas</a>: Comprehensive schema descriptions for bulk data files.</li>
+    <li><strong>dbt Model Metadata</strong>: Source-entry mapping and tests are defined in <code>models/raw_fec/schema.yml</code>.</li>
+    <li><strong>SQL DDL</strong>: DuckDB-compatible DDL scripts are maintained in <code>sql/schema/</code>.</li>
+    <li><a href="https://www.fec.gov/data/browse-data/?tab=bulk-data">FEC Bulk Data References</a>: Official source files and descriptions.</li>
 </ul>
-<p>These schemas ensure seamless data transformations and compatibility between the ETL pipeline and reporting tools.</p>
+<p>These sources provide the contract between downloaded files and loaded DuckDB raw tables.</p>
 </body>
 </html>

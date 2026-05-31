@@ -3,8 +3,12 @@
         "*.copilotmd": "vscode.markdown.preview.editor",
         "*.parquet": "duckdb.parquetViewer",
         "*.csv": "duckdb.csvViewer",
-        "*.tsv": "duckdb.csvViewer"
+        "*.tsv": "duckdb.csvViewer",
+        "*.xlsx": "duckdb.dataFileViewer",
+        "*.html": "default"
     },
+    "livePreview.openPreviewTarget": "Embedded Preview",
+    "livePreview.useIntegratedBrowser": true,
     "terminal.integrated.env.windows": {
         "PATH": "${workspaceFolder}/scripts;${env:PATH}"
     },

@@ -64,6 +64,9 @@ def normalize_tables(raw_tables: list[str] | None) -> list[str]:
 def parse_year_range(raw_value: Any, context: str) -> tuple[int, int]:
     """Parse a year range such as 2020-2026 or a single year."""
 
+    if isinstance(raw_value, bool):
+        raise SystemExit(f"{context} must be a year or year range string")
+
     if isinstance(raw_value, int):
         return raw_value, raw_value
 
@@ -74,12 +77,15 @@ def parse_year_range(raw_value: Any, context: str) -> tuple[int, int]:
     if not value:
         raise SystemExit(f"{context} cannot be empty")
 
-    if "-" in value:
-        start_text, end_text = [part.strip() for part in value.split("-", 1)]
-        start_year = int(start_text)
-        end_year = int(end_text)
-    else:
-        start_year = end_year = int(value)
+    try:
+        if "-" in value:
+            start_text, end_text = [part.strip() for part in value.split("-", 1)]
+            start_year = int(start_text)
+            end_year = int(end_text)
+        else:
+            start_year = end_year = int(value)
+    except ValueError as exc:
+        raise SystemExit(f"{context} must be a year or year range string") from exc
 
     if start_year > end_year:
         raise SystemExit(f"{context} start year must not be greater than end year")

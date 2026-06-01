@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from html import escape
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, quote, urlencode
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
@@ -296,11 +296,16 @@ def render_shell(active_path: str, body_html: str | None = None, extra_head_html
 """
 
 
-def _render_detail_rows(rows: list[tuple[str, str]]) -> str:
-    items = [
-        f"<div class='detail-row'><dt>{escape(label)}</dt><dd>{escape(value)}</dd></div>"
-        for label, value in rows
-    ]
+def _render_detail_rows(rows: list[tuple[str, str] | tuple[str, str, bool]]) -> str:
+    items: list[str] = []
+    for row in rows:
+        if len(row) == 3:
+            label, value, allow_html = row
+        else:
+            label, value = row
+            allow_html = False
+        rendered_value = value if allow_html else escape(value)
+        items.append(f"<div class='detail-row'><dt>{escape(label)}</dt><dd>{rendered_value}</dd></div>")
     return f"<dl class='detail-list'>{''.join(items)}</dl>"
 
 
@@ -347,7 +352,50 @@ def _resolve_history_log_path(repo_root_path: Path, record: CommandRunRecord) ->
     return resolved
 
 
-def _format_record(record: CommandRunRecord) -> str:
+def _history_report_directory(repo_root_path: Path, run_number: int | None) -> Path | None:
+    if run_number is None:
+        return None
+    return repo_root_path / "artifacts" / "reports" / "ops-web" / f"run-{run_number}"
+
+
+def _list_history_report_artifacts(repo_root_path: Path, run_number: int | None) -> list[Path]:
+    report_directory = _history_report_directory(repo_root_path, run_number)
+    if report_directory is None or not report_directory.exists() or not report_directory.is_dir():
+        return []
+    return sorted(
+        (
+            artifact_path
+            for artifact_path in report_directory.iterdir()
+            if artifact_path.is_file() and artifact_path.suffix.lower() == ".html"
+        ),
+        key=lambda artifact_path: artifact_path.name.lower(),
+    )
+
+
+def _render_history_report_cell(repo_root_path: Path, run_number: int | None) -> str:
+    artifacts = _list_history_report_artifacts(repo_root_path, run_number)
+    if not artifacts or run_number is None:
+        return "n/a"
+    return "<br>".join(
+        f"<a href='/history/reports/{run_number}/{quote(artifact_path.name, safe='')}'>{escape(artifact_path.name)}</a>"
+        for artifact_path in artifacts
+    )
+
+
+def _resolve_history_report_path(repo_root_path: Path, run_number: int, artifact_name: str) -> Path:
+    report_directory = _history_report_directory(repo_root_path, run_number)
+    if report_directory is None:
+        raise HTTPException(status_code=404, detail="report artifact not found")
+    report_root = report_directory.resolve()
+    candidate = (report_directory / artifact_name).resolve()
+    if not candidate.is_relative_to(report_root):
+        raise HTTPException(status_code=404, detail="report artifact not found")
+    if not candidate.exists() or not candidate.is_file() or candidate.suffix.lower() != ".html":
+        raise HTTPException(status_code=404, detail="report artifact not found")
+    return candidate
+
+
+def _format_record(repo_root_path: Path, record: CommandRunRecord, *, internal_log_link: bool = False) -> str:
     return _render_detail_rows(
         [
             ("Status", record.lifecycle_state),
@@ -361,7 +409,8 @@ def _format_record(record: CommandRunRecord) -> str:
             ("Launch", record.launch_status),
             ("PID", str(record.pid) if record.pid is not None else "n/a"),
             ("Exit code", str(record.exit_code) if record.exit_code is not None else "n/a"),
-            ("Log path", record.log_path or "n/a"),
+            ("Log path", _render_log_cell(record.run_number, record.log_path, internal_link=internal_log_link), True),
+            ("Reports", _render_history_report_cell(repo_root_path, record.run_number), True),
             ("Command line", record.command_line or "n/a"),
             ("Rejection", record.rejection_reason or "n/a"),
             ("Launch error", record.launch_error or "n/a"),
@@ -408,7 +457,8 @@ def _render_dashboard(repo_root_path: Path, active_run: CommandRunRecord | None)
                 ("Launched", active_run.launched_at or "not launched"),
                 ("PID", str(active_run.pid) if active_run.pid is not None else "n/a"),
                 ("Launch", active_run.launch_status),
-                ("Log path", active_run.log_path or "n/a"),
+                ("Log path", _render_log_cell(active_run.run_number, active_run.log_path, internal_link=True), True),
+                ("Reports", _render_history_report_cell(repo_root_path, active_run.run_number), True),
             ]
         )
 
@@ -479,7 +529,7 @@ def _render_scope_editor(
     return render_shell("/data-scope-config", body_html=body_html)
 
 
-def _render_history(records: list[CommandRunRecord]) -> str:
+def _render_history(repo_root_path: Path, records: list[CommandRunRecord]) -> str:
     if not records:
         body_html = """
 <div class='stack'>
@@ -506,6 +556,7 @@ def _render_history(records: list[CommandRunRecord]) -> str:
             escape(record.completed_at or "n/a"),
             escape(str(record.exit_code) if record.exit_code is not None else "n/a"),
             _render_log_cell(record.run_number, record.log_path, internal_link=True),
+            _render_history_report_cell(repo_root_path, record.run_number),
             escape(str(record.run_number) if record.run_number is not None else "n/a"),
         ]
         for record in records
@@ -521,7 +572,7 @@ def _render_history(records: list[CommandRunRecord]) -> str:
   <section class='subpanel'>
     <h3>Recent audit records</h3>
     {_render_table(
-        ["Requested", "Command", "Operator", "Lifecycle", "Admission", "Launched", "Completed", "Exit", "Log", "Run"],
+        ["Requested", "Command", "Operator", "Lifecycle", "Admission", "Launched", "Completed", "Exit", "Log", "Reports", "Run"],
         table_rows,
     )}
   </section>
@@ -565,6 +616,7 @@ def _load_runs_scope_state(config_path: Path) -> tuple[dict[str, object] | None,
 
 
 def _render_runs(
+    repo_root_path: Path,
     active_run: CommandRunRecord | None,
     recent_runs: list[CommandRunRecord],
     scope_summary_rows: list[tuple[str, str]],
@@ -588,7 +640,7 @@ def _render_runs(
     active_html = (
         "<p class='muted'>No active Workflow Run. You can submit a new allowlisted command below.</p>"
         if active_run is None
-        else _format_record(active_run)
+        else _format_record(repo_root_path, active_run, internal_log_link=True)
     )
     cancel_form = ""
     if active_run is not None:
@@ -609,7 +661,7 @@ def _render_runs(
                 escape(record.lifecycle_state),
                 escape(record.admission_status),
                 escape(str(record.exit_code) if record.exit_code is not None else "n/a"),
-                _render_log_cell(record.run_number, record.log_path),
+                _render_log_cell(record.run_number, record.log_path, internal_link=True),
             ]
             for record in recent_runs
         ]
@@ -861,7 +913,7 @@ def create_app(
 
     @app.get("/history", response_class=HTMLResponse, include_in_schema=False)
     def history() -> HTMLResponse:
-        return HTMLResponse(content=_render_history(app_runner.list_recent_runs(limit=25)))
+        return HTMLResponse(content=_render_history(resolved_repo_root, app_runner.list_recent_runs(limit=25)))
 
     @app.get("/history/logs/{run_number}", response_class=PlainTextResponse, include_in_schema=False)
     def history_log(run_number: int) -> PlainTextResponse:
@@ -870,6 +922,14 @@ def create_app(
             raise HTTPException(status_code=404, detail="run not found")
         log_path = _resolve_history_log_path(resolved_repo_root, record)
         return PlainTextResponse(log_path.read_text(encoding="utf-8"))
+
+    @app.get("/history/reports/{run_number}/{artifact_name}", response_class=HTMLResponse, include_in_schema=False)
+    def history_report(run_number: int, artifact_name: str) -> HTMLResponse:
+        record = app_runner.get_run(run_number)
+        if record is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        report_path = _resolve_history_report_path(resolved_repo_root, run_number, artifact_name)
+        return HTMLResponse(report_path.read_text(encoding="utf-8"))
 
     @app.get("/upstream-changes", response_class=HTMLResponse, include_in_schema=False)
     def upstream_changes() -> HTMLResponse:
@@ -888,6 +948,7 @@ def create_app(
                 recent_runs = [selected_record] + [record for record in recent_runs if record.run_number != run_number]
         return HTMLResponse(
             content=_render_runs(
+                repo_root_path=resolved_repo_root,
                 active_run=app_runner.get_active_run(),
                 recent_runs=recent_runs,
                 scope_summary_rows=scope_summary_rows,
@@ -912,6 +973,7 @@ def create_app(
         if scope_config is None:
             return HTMLResponse(
                 content=_render_runs(
+                    repo_root_path=resolved_repo_root,
                     active_run=app_runner.get_active_run(),
                     recent_runs=app_runner.list_recent_runs(limit=10),
                     scope_summary_rows=scope_summary_rows,

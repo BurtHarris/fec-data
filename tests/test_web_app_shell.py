@@ -273,6 +273,9 @@ table_groups:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            report_path = root / "artifacts" / "reports" / "ops-web" / "run-123" / "summary.html"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text("<html><body>summary</body></html>", encoding="utf-8")
             _write_data_scope(
                 root,
                 """version: 1
@@ -290,7 +293,10 @@ table_groups:
         self.assertIn("fetch", html)
         self.assertIn("123", html)
         self.assertIn("alice &amp; bob", html)
-        self.assertIn("logs\\run-123.log", html)
+        self.assertIn("href='/history/logs/123'", html)
+        self.assertIn(">View log</a>", html)
+        self.assertIn("href='/history/reports/123/summary.html'", html)
+        self.assertIn(">summary.html</a>", html)
 
     def test_data_scope_route_renders_current_config_and_preview(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -402,6 +408,44 @@ table_groups:
 
         self.assertIn("No persisted Workflow Runs yet.", html)
 
+    def test_history_route_renders_report_artifact_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_path = root / "artifacts" / "reports" / "ops-web" / "run-1" / "summary.html"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text("<html><body>summary</body></html>", encoding="utf-8")
+
+            runner = _StubRunner()
+            runner._records = {
+                1: CommandRunRecord(
+                    run_number=1,
+                    requested_at="2026-05-31T13:00:00Z",
+                    operator_id="alice",
+                    command="fetch",
+                    payload_json="{}",
+                    admission_status="admitted",
+                    rejection_reason=None,
+                    launch_status="launched",
+                    launch_error=None,
+                    launched_at="2026-05-31T13:00:05Z",
+                    pid=111,
+                    command_line="uv run download",
+                    log_path="logs\\run-1.log",
+                    lifecycle_state="completed",
+                    completed_at="2026-05-31T13:10:00Z",
+                    exit_code=0,
+                )
+            }
+            app = create_app(repo_root_path=root, runner=runner)
+            route = next((route for route in app.routes if getattr(route, "path", None) == "/history"), None)
+            assert route is not None
+
+            response = route.endpoint()
+            html = response.body.decode("utf-8")
+
+        self.assertIn("href='/history/reports/1/summary.html'", html)
+        self.assertIn(">summary.html</a>", html)
+
     def test_history_log_route_serves_saved_log_text(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -439,6 +483,89 @@ table_groups:
 
         self.assertEqual(response.media_type, "text/plain")
         self.assertEqual(body, "line 1\nline 2\n")
+
+    def test_history_report_route_serves_saved_html_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_path = root / "artifacts" / "reports" / "ops-web" / "run-1" / "summary.html"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text("<html><body>summary</body></html>", encoding="utf-8")
+
+            runner = _StubRunner()
+            runner._records = {
+                1: CommandRunRecord(
+                    run_number=1,
+                    requested_at="2026-05-31T13:00:00Z",
+                    operator_id="alice",
+                    command="fetch",
+                    payload_json="{}",
+                    admission_status="admitted",
+                    rejection_reason=None,
+                    launch_status="launched",
+                    launch_error=None,
+                    launched_at="2026-05-31T13:00:05Z",
+                    pid=111,
+                    command_line="uv run download",
+                    log_path="logs\\run-1.log",
+                    lifecycle_state="completed",
+                    completed_at="2026-05-31T13:10:00Z",
+                    exit_code=0,
+                )
+            }
+            app = create_app(repo_root_path=root, runner=runner)
+            route = next(
+                (route for route in app.routes if getattr(route, "path", None) == "/history/reports/{run_number}/{artifact_name}"),
+                None,
+            )
+            assert route is not None
+
+            response = route.endpoint(1, "summary.html")
+            body = response.body.decode("utf-8")
+
+        self.assertEqual(response.media_type, "text/html")
+        self.assertEqual(body, "<html><body>summary</body></html>")
+
+    def test_history_report_route_rejects_paths_outside_run_report_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_path = root / "artifacts" / "reports" / "ops-web" / "run-1" / "summary.html"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text("<html><body>summary</body></html>", encoding="utf-8")
+            outside_path = root / "artifacts" / "reports" / "ops-web" / "outside.html"
+            outside_path.write_text("<html><body>outside</body></html>", encoding="utf-8")
+
+            runner = _StubRunner()
+            runner._records = {
+                1: CommandRunRecord(
+                    run_number=1,
+                    requested_at="2026-05-31T13:00:00Z",
+                    operator_id="alice",
+                    command="fetch",
+                    payload_json="{}",
+                    admission_status="admitted",
+                    rejection_reason=None,
+                    launch_status="launched",
+                    launch_error=None,
+                    launched_at="2026-05-31T13:00:05Z",
+                    pid=111,
+                    command_line="uv run download",
+                    log_path="logs\\run-1.log",
+                    lifecycle_state="completed",
+                    completed_at="2026-05-31T13:10:00Z",
+                    exit_code=0,
+                )
+            }
+            app = create_app(repo_root_path=root, runner=runner)
+            route = next(
+                (route for route in app.routes if getattr(route, "path", None) == "/history/reports/{run_number}/{artifact_name}"),
+                None,
+            )
+            assert route is not None
+
+            with self.assertRaises(HTTPException) as raised:
+                route.endpoint(1, "..\\outside.html")
+
+        self.assertEqual(raised.exception.status_code, 404)
 
     def test_history_log_route_rejects_paths_outside_repo_logs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -568,6 +695,9 @@ table_groups:
         )
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            report_path = root / "artifacts" / "reports" / "ops-web" / "run-7" / "summary report.html"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text("<html><body>summary</body></html>", encoding="utf-8")
             _write_data_scope(
                 root,
                 """version: 1
@@ -588,7 +718,10 @@ table_groups:
         self.assertIn("Submit Workflow Run", html)
         self.assertIn("Cancel active run", html)
         self.assertIn("Recent Run Log", html)
-        self.assertIn("run-7.log", html)
+        self.assertIn("href='/history/logs/7'", html)
+        self.assertIn(">View log</a>", html)
+        self.assertIn("href='/history/reports/7/summary%20report.html'", html)
+        self.assertIn(">summary report.html</a>", html)
         self.assertIn("refresh", html)
         self.assertIn("Run Request Source", html)
         self.assertIn("Derived cycle", html)

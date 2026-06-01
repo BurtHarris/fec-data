@@ -32,6 +32,11 @@ class DataScopeConfigServiceTests(unittest.TestCase):
                 "dimensions": ["CM", "cn", "CM", "weball"],
                 "facts": ["INDIV", "pas2", "pas2"],
             },
+            "metadata_database": {
+                "sqlite": {
+                    "path": " db\\fec-metadata.sqlite ",
+                }
+            },
         }
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -43,6 +48,14 @@ class DataScopeConfigServiceTests(unittest.TestCase):
         self.assertEqual(loaded["facts"], "2024-2026")
         self.assertEqual(loaded["table_groups"]["dimensions"], ["cm", "cn", "weball"])
         self.assertEqual(loaded["table_groups"]["facts"], ["indiv", "pas2"])
+        self.assertEqual(
+            loaded["metadata_database"],
+            {
+                "sqlite": {
+                    "path": "db\\fec-metadata.sqlite",
+                }
+            },
+        )
 
     def test_snapshot_is_immutable_copy_of_normalized_config(self) -> None:
         raw = {
@@ -58,6 +71,24 @@ class DataScopeConfigServiceTests(unittest.TestCase):
         snap["table_groups"]["dimensions"].append("cn")
 
         self.assertEqual(raw["table_groups"]["dimensions"], ["cm"])
+
+    def test_normalize_rejects_blank_sqlite_path(self) -> None:
+        raw = {
+            "coverage": "2026",
+            "facts": "2026",
+            "table_groups": {
+                "dimensions": ["cm"],
+                "facts": ["indiv"],
+            },
+            "metadata_database": {
+                "sqlite": {
+                    "path": "   ",
+                }
+            },
+        }
+
+        with self.assertRaisesRegex(SystemExit, "metadata_database.sqlite.path must not be empty"):
+            normalize_data_scope_config(raw)
 
 
 if __name__ == "__main__":

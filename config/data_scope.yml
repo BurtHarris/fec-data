@@ -9,3 +9,8 @@ facts: 2022-2026
 table_groups:
   dimensions: [cm, cn, ccl, weball]
   facts: [indiv, oppexp, oth, pas2]
+
+# Download metadata, conditional request state, and dashboard progress live in SQLite.
+metadata_database:
+  sqlite:
+    path: db\fec-metadata.sqlite

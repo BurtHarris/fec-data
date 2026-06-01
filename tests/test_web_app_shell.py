@@ -1,5 +1,4 @@
 import asyncio
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +6,7 @@ from pathlib import Path
 from fastapi import HTTPException, Request
 
 from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH
+from pipeline.metadata_store import DownloadStatusRecord, FetchHistoryRecord, InMemoryDownloadMetadataStore
 from pipeline.web.app import SCREEN_ROUTES, create_app, render_shell
 from pipeline.web.command_runner import CommandRequest, CommandRunRecord
 
@@ -112,58 +112,40 @@ def _write_data_scope(root: Path, content: str) -> Path:
     return config_path
 
 
-def _write_metadata_history(metadata_db_path: Path, rows: list[tuple[object, ...]]) -> Path:
-    metadata_db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(metadata_db_path)
-    try:
-        conn.execute(
-            """
-            CREATE TABLE etl_fetch_history (
-                fetch_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cycle INTEGER NOT NULL,
-                table_name TEXT NOT NULL,
-                zip_name TEXT,
-                source_url TEXT,
-                fetch_status TEXT NOT NULL,
-                http_status INTEGER,
-                content_length INTEGER,
-                response_date TEXT,
-                last_modified TEXT,
-                etag TEXT,
-                local_file_size INTEGER,
-                fetched_at TEXT NOT NULL,
-                error_text TEXT
+def _build_metadata_store(
+    *,
+    statuses: tuple[DownloadStatusRecord, ...] = (),
+    history_rows: list[tuple[object, ...]] | None = None,
+) -> InMemoryDownloadMetadataStore:
+    history: list[FetchHistoryRecord] = []
+    for index, row in enumerate(history_rows or [], start=1):
+        history.append(
+            FetchHistoryRecord(
+                fetch_id=index,
+                cycle=int(row[0]),
+                table_name=str(row[1]),
+                zip_name=str(row[2]),
+                source_url=str(row[3]),
+                fetch_status=str(row[4]),
+                http_status=row[5] if isinstance(row[5], int) else None,
+                content_length=row[6] if isinstance(row[6], int) else None,
+                response_date=row[7] if isinstance(row[7], str) else None,
+                last_modified=row[8] if isinstance(row[8], str) else None,
+                etag=row[9] if isinstance(row[9], str) else None,
+                local_file_size=row[10] if isinstance(row[10], int) else None,
+                fetched_at=str(row[11]),
+                error_text=row[12] if isinstance(row[12], str) else None,
             )
-            """
         )
-        conn.executemany(
-            """
-            INSERT INTO etl_fetch_history (
-                cycle,
-                table_name,
-                zip_name,
-                source_url,
-                fetch_status,
-                http_status,
-                content_length,
-                response_date,
-                last_modified,
-                etag,
-                local_file_size,
-                fetched_at,
-                error_text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    return metadata_db_path
+    return InMemoryDownloadMetadataStore(statuses=statuses, history=tuple(history))
 
 
-def _render_dashboard_html(root: Path, active_run: CommandRunRecord | None = None) -> str:
-    app = create_app(repo_root_path=root, runner=_StubRunner(active_run))
+def _render_dashboard_html(
+    root: Path,
+    active_run: CommandRunRecord | None = None,
+    metadata_store: InMemoryDownloadMetadataStore | None = None,
+) -> str:
+    app = create_app(repo_root_path=root, runner=_StubRunner(active_run), metadata_store=metadata_store)
     dashboard_route = next((route for route in app.routes if getattr(route, "path", None) == "/dashboard"), None)
     assert dashboard_route is not None
     response = dashboard_route.endpoint()
@@ -291,6 +273,56 @@ table_groups:
         self.assertIn("123", html)
         self.assertIn("alice &amp; bob", html)
         self.assertIn("logs\\run-123.log", html)
+
+    def test_dashboard_route_renders_cycle_table_download_progress(self) -> None:
+        metadata_store = _build_metadata_store(
+            statuses=(
+                DownloadStatusRecord(
+                    cycle=2024,
+                    table_name="indiv",
+                    zip_name="indiv24.zip",
+                    source_url="https://example.test/indiv24.zip",
+                    fetch_status="downloading",
+                    http_status=200,
+                    content_length=200,
+                    response_date="Mon, 01 Jan 2024 00:00:01 GMT",
+                    last_modified="Mon, 01 Jan 2024 00:00:00 GMT",
+                    etag="etag-1",
+                    local_file_size=100,
+                    bytes_downloaded=100,
+                    progress_pct=50.0,
+                    download_started_at="2024-01-01T00:00:00Z",
+                    download_completed_at=None,
+                    last_attempt_at="2024-01-01T00:00:10Z",
+                    updated_at="2024-01-01T00:00:10Z",
+                ),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_data_scope(
+                root,
+                """version: 1
+coverage: 2024-2026
+facts: 2024-2026
+table_groups:
+  dimensions: [cm]
+  facts: [indiv]
+metadata_database:
+  sqlite:
+    path: db\\fec-metadata.sqlite
+""",
+            )
+
+            html = _render_dashboard_html(root, metadata_store=metadata_store)
+
+        self.assertIn("Download Progress", html)
+        self.assertIn("Tracked cycle/table pairs", html)
+        self.assertIn("2024", html)
+        self.assertIn("indiv", html)
+        self.assertIn("50.0%", html)
+        self.assertIn("100 bytes", html)
 
     def test_data_scope_route_renders_current_config_and_preview(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -477,29 +509,24 @@ table_groups:
 
         self.assertEqual(raised.exception.status_code, 404)
 
-    def test_upstream_changes_route_renders_empty_state_when_db_is_missing(self) -> None:
+    def test_upstream_changes_route_renders_empty_state_when_metadata_store_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            app = create_app(
-                repo_root_path=root,
-                runner=_StubRunner(),
-                metadata_db_path=root / "db" / "fec-metadata.sqlite",
-            )
+            app = create_app(repo_root_path=root, runner=_StubRunner())
             route = next((route for route in app.routes if getattr(route, "path", None) == "/upstream-changes"), None)
             assert route is not None
 
             response = route.endpoint()
             html = response.body.decode("utf-8")
 
-        self.assertIn("Metadata history database not found", html)
+        self.assertIn("metadata_database.sqlite config is unavailable", html)
         self.assertIn("Metadata history status", html)
 
     def test_upstream_changes_route_renders_change_tables_when_history_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            metadata_db_path = _write_metadata_history(
-                root / "db" / "fec-metadata.sqlite",
-                [
+            metadata_store = _build_metadata_store(
+                history_rows=[
                     (
                         2024,
                         "indiv",
@@ -532,7 +559,7 @@ table_groups:
                     ),
                 ],
             )
-            app = create_app(repo_root_path=root, runner=_StubRunner(), metadata_db_path=metadata_db_path)
+            app = create_app(repo_root_path=root, runner=_StubRunner(), metadata_store=metadata_store)
             route = next((route for route in app.routes if getattr(route, "path", None) == "/upstream-changes"), None)
             assert route is not None
 

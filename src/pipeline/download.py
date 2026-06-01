@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import json
 import shutil
-import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -22,11 +20,20 @@ from urllib.request import Request, urlopen
 
 from pipeline.cli_common import validate_even_cycle
 from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, load_data_scope_config
+from pipeline.metadata_store import (
+    CachedFetchMetadata,
+    DownloadMetadataStore,
+    DownloadStatusRecord,
+    FetchHistoryRecord,
+    SqliteDownloadMetadataStore,
+    load_sqlite_metadata_config,
+    metadata_sqlite_schema_path,
+)
 
 
 DEFAULT_TABLES = ("ccl", "cm", "cn", "indiv", "oppexp", "oth", "pas2", "weball")
 DEFAULT_COVERAGE_CONFIG = CANONICAL_DATA_SCOPE_PATH
-_METADATA_DB_LOCK = threading.Lock()
+_PROGRESS_RECORD_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -37,8 +44,6 @@ class DownloadPlan:
     table: str
     url: str
     zip_path: Path
-    meta_path: Path
-    metadata_db_path: Path
 
 
 def repo_root() -> Path:
@@ -184,26 +189,7 @@ def build_plan(cycle: int, table: str, root: Path) -> DownloadPlan:
         table=table,
         url=f"https://www.fec.gov/files/bulk-downloads/{cycle}/{file_stem}.zip",
         zip_path=cycle_dir / f"{file_stem}.zip",
-        meta_path=cycle_dir / f".{file_stem}.json",
-        metadata_db_path=root / "db" / "fec-metadata.sqlite",
     )
-
-
-def read_meta(path: Path) -> dict[str, str]:
-    """Read cached HTTP metadata; missing or invalid metadata just means recheck."""
-
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-
-
-def metadata_schema_path(root: Path) -> Path:
-    """Return the metadata SQLite schema path."""
-
-    return root / "sql" / "schema" / "001_create_metadata_sqlite.sql"
 
 
 def iso_utc_now() -> str:
@@ -241,84 +227,118 @@ def _local_file_size(path: Path) -> int | None:
     return path.stat().st_size
 
 
-def record_fetch_history(
+def _resolved_response_date(headers: Any, cached_meta: CachedFetchMetadata) -> str | None:
+    if headers is not None:
+        return _normalize_optional_text(headers.get("Date"))
+    return cached_meta.response_date
+
+
+def _resolved_last_modified(headers: Any, cached_meta: CachedFetchMetadata) -> str | None:
+    if headers is not None:
+        value = _normalize_optional_text(headers.get("Last-Modified"))
+        if value is not None:
+            return value
+    return cached_meta.last_modified
+
+
+def _resolved_etag(headers: Any, cached_meta: CachedFetchMetadata) -> str | None:
+    if headers is not None:
+        value = _normalize_optional_text(headers.get("ETag"))
+        if value is not None:
+            return value
+    return cached_meta.etag
+
+
+def _resolved_content_length(
+    headers: Any,
+    cached_meta: CachedFetchMetadata,
+    explicit_content_length: int | None,
+) -> int | None:
+    if explicit_content_length is not None:
+        return explicit_content_length
+    if headers is not None:
+        header_value = _parse_optional_int(headers.get("Content-Length"))
+        if header_value is not None:
+            return header_value
+    return cached_meta.content_length
+
+
+def record_download_status(
+    metadata_store: DownloadMetadataStore,
     plan: DownloadPlan,
     fetch_status: str,
-    cached_meta: dict[str, str],
+    cached_meta: CachedFetchMetadata,
+    *,
+    headers: Any = None,
+    http_status: int | None = None,
+    content_length: int | None = None,
+    bytes_downloaded: int | None = None,
+    progress_pct: float | None = None,
+    download_started_at: str | None = None,
+    download_completed_at: str | None = None,
+    error_text: str | None = None,
+    updated_at: str | None = None,
+) -> None:
+    resolved_updated_at = updated_at or iso_utc_now()
+    metadata_store.record_download_status(
+        DownloadStatusRecord(
+            cycle=plan.cycle,
+            table_name=plan.table,
+            zip_name=plan.zip_path.name,
+            source_url=plan.url,
+            fetch_status=fetch_status,
+            http_status=http_status,
+            content_length=_resolved_content_length(headers, cached_meta, content_length),
+            response_date=_resolved_response_date(headers, cached_meta),
+            last_modified=_resolved_last_modified(headers, cached_meta),
+            etag=_resolved_etag(headers, cached_meta),
+            local_file_size=_local_file_size(plan.zip_path),
+            bytes_downloaded=bytes_downloaded,
+            progress_pct=progress_pct,
+            download_started_at=download_started_at,
+            download_completed_at=download_completed_at,
+            last_attempt_at=resolved_updated_at,
+            error_text=error_text,
+            updated_at=resolved_updated_at,
+        )
+    )
+
+
+def record_fetch_history(
+    metadata_store: DownloadMetadataStore,
+    plan: DownloadPlan,
+    fetch_status: str,
+    cached_meta: CachedFetchMetadata,
     headers: Any = None,
     *,
     http_status: int | None = None,
     content_length: int | None = None,
+    bytes_downloaded: int | None = None,
+    download_started_at: str | None = None,
     error_text: str | None = None,
     fetched_at: str | None = None,
 ) -> None:
-    """Persist one fetch attempt to the metadata SQLite history store."""
+    """Persist one fetch attempt to the metadata history store."""
 
-    schema_path = metadata_schema_path(repo_root())
-    resolved_fetched_at = fetched_at or iso_utc_now()
-    resolved_content_length = content_length
-    if resolved_content_length is None and headers is not None:
-        resolved_content_length = _parse_optional_int(headers.get("Content-Length"))
-    if resolved_content_length is None:
-        resolved_content_length = _parse_optional_int(cached_meta.get("content_length"))
-    resolved_last_modified = None
-    resolved_etag = None
-    resolved_response_date = None
-    if headers is not None:
-        resolved_response_date = _normalize_optional_text(headers.get("Date"))
-        resolved_last_modified = _normalize_optional_text(headers.get("Last-Modified"))
-        resolved_etag = _normalize_optional_text(headers.get("ETag"))
-    if resolved_last_modified is None:
-        resolved_last_modified = _normalize_optional_text(cached_meta.get("last_modified"))
-    if resolved_etag is None:
-        resolved_etag = _normalize_optional_text(cached_meta.get("etag"))
-
-    row = (
-        plan.cycle,
-        plan.table,
-        plan.zip_path.name,
-        plan.url,
-        fetch_status,
-        http_status,
-        resolved_content_length,
-        resolved_response_date,
-        resolved_last_modified,
-        resolved_etag,
-        _local_file_size(plan.zip_path),
-        resolved_fetched_at,
-        error_text,
+    metadata_store.record_fetch_history(
+        FetchHistoryRecord(
+            cycle=plan.cycle,
+            table_name=plan.table,
+            zip_name=plan.zip_path.name,
+            source_url=plan.url,
+            fetch_status=fetch_status,
+            http_status=http_status,
+            content_length=_resolved_content_length(headers, cached_meta, content_length),
+            response_date=_resolved_response_date(headers, cached_meta),
+            last_modified=_resolved_last_modified(headers, cached_meta),
+            etag=_resolved_etag(headers, cached_meta),
+            local_file_size=_local_file_size(plan.zip_path),
+            bytes_downloaded=bytes_downloaded,
+            download_started_at=download_started_at,
+            fetched_at=fetched_at or iso_utc_now(),
+            error_text=error_text,
+        )
     )
-
-    plan.metadata_db_path.parent.mkdir(parents=True, exist_ok=True)
-    schema_sql = schema_path.read_text(encoding="utf-8")
-    with _METADATA_DB_LOCK:
-        conn = sqlite3.connect(plan.metadata_db_path, timeout=30)
-        try:
-            conn.execute("PRAGMA busy_timeout = 30000")
-            conn.executescript(schema_sql)
-            conn.execute(
-                """
-                INSERT INTO etl_fetch_history (
-                    cycle,
-                    table_name,
-                    zip_name,
-                    source_url,
-                    fetch_status,
-                    http_status,
-                    content_length,
-                    response_date,
-                    last_modified,
-                    etag,
-                    local_file_size,
-                    fetched_at,
-                    error_text
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                row,
-            )
-            conn.commit()
-        finally:
-            conn.close()
 
 
 def format_bytes(value: int) -> str:
@@ -351,22 +371,39 @@ def print_progress(plan: DownloadPlan, downloaded: int, total: int | None, start
         )
 
 
-def download_one(plan: DownloadPlan, force: bool, progress_interval: float) -> str:
+def _progress_percent(downloaded: int, total: int | None) -> float | None:
+    if total is None or total <= 0:
+        return None
+    return round(min((downloaded / total) * 100, 100), 2)
+
+
+def download_one(plan: DownloadPlan, force: bool, progress_interval: float, metadata_store: DownloadMetadataStore) -> str:
     """Download one file, using ETag/Last-Modified headers when available."""
 
     plan.zip_path.parent.mkdir(parents=True, exist_ok=True)
     headers = {"User-Agent": "moneytrail/0.1"}
-    cached = read_meta(plan.meta_path)
+    cached = metadata_store.load_cached_fetch_metadata(plan.cycle, plan.table)
 
     # Conditional requests let the FEC server answer 304 Not Modified when our
     # local ZIP is still current, so repeated runs are fast and gentle.
     if not force and plan.zip_path.exists():
-        if etag := cached.get("etag"):
+        if etag := cached.etag:
             headers["If-None-Match"] = etag
-        if last_modified := cached.get("last_modified"):
+        if last_modified := cached.last_modified:
             headers["If-Modified-Since"] = last_modified
 
     request = Request(plan.url, headers=headers)
+    download_started_at = iso_utc_now()
+    record_download_status(
+        metadata_store,
+        plan,
+        "downloading",
+        cached,
+        download_started_at=download_started_at,
+        bytes_downloaded=0,
+        progress_pct=0.0,
+        updated_at=download_started_at,
+    )
     try:
         with urlopen(request, timeout=120) as response:
             total_header = response.headers.get("Content-Length", "")
@@ -389,61 +426,133 @@ def download_one(plan: DownloadPlan, force: bool, progress_interval: float) -> s
                     now = time.monotonic()
                     if now - last_progress_at >= progress_interval:
                         print_progress(plan, downloaded, total, started_at)
+                        with _PROGRESS_RECORD_LOCK:
+                            record_download_status(
+                                metadata_store,
+                                plan,
+                                "downloading",
+                                cached,
+                                headers=response.headers,
+                                http_status=getattr(response, "status", 200),
+                                content_length=total or downloaded,
+                                bytes_downloaded=downloaded,
+                                progress_pct=_progress_percent(downloaded, total),
+                                download_started_at=download_started_at,
+                            )
                         last_progress_at = now
 
             shutil.move(str(part_path), str(plan.zip_path))
-            meta = {
-                "url": plan.url,
-                "etag": response.headers.get("ETag", ""),
-                "last_modified": response.headers.get("Last-Modified", ""),
-                "response_date": response.headers.get("Date", ""),
-                "content_length": total_header or str(downloaded),
-            }
-            plan.meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
             record_fetch_history(
+                metadata_store,
                 plan,
                 "downloaded",
                 cached,
                 response.headers,
                 http_status=getattr(response, "status", 200),
                 content_length=total or downloaded,
+                bytes_downloaded=downloaded,
+                download_started_at=download_started_at,
+            )
+            record_download_status(
+                metadata_store,
+                plan,
+                "downloaded",
+                cached,
+                headers=response.headers,
+                http_status=getattr(response, "status", 200),
+                content_length=total or downloaded,
+                bytes_downloaded=downloaded,
+                progress_pct=_progress_percent(downloaded, total) or 100.0,
+                download_started_at=download_started_at,
+                download_completed_at=iso_utc_now(),
             )
             print_progress(plan, downloaded, total, started_at)
             return f"downloaded {plan.zip_path.name} ({downloaded:,} bytes)"
     except HTTPError as exc:
         if exc.code == 304:
             record_fetch_history(
+                metadata_store,
                 plan,
                 "not_modified",
                 cached,
                 exc.headers,
                 http_status=exc.code,
             )
+            record_download_status(
+                metadata_store,
+                plan,
+                "not_modified",
+                cached,
+                headers=exc.headers,
+                http_status=exc.code,
+                bytes_downloaded=_local_file_size(plan.zip_path),
+                progress_pct=100.0 if plan.zip_path.exists() else None,
+                download_started_at=download_started_at,
+                download_completed_at=iso_utc_now(),
+            )
             return f"skipped {plan.zip_path.name} (not modified)"
         record_fetch_history(
+            metadata_store,
             plan,
             "failed",
             cached,
             exc.headers,
             http_status=exc.code,
             error_text=str(exc),
+            download_started_at=download_started_at,
+        )
+        record_download_status(
+            metadata_store,
+            plan,
+            "failed",
+            cached,
+            headers=exc.headers,
+            http_status=exc.code,
+            bytes_downloaded=_local_file_size(plan.zip_path),
+            progress_pct=_progress_percent(_local_file_size(plan.zip_path) or 0, cached.content_length),
+            download_started_at=download_started_at,
+            error_text=str(exc),
         )
         raise RuntimeError(f"failed {plan.zip_path.name}: HTTP {exc.code}") from exc
     except URLError as exc:
         record_fetch_history(
+            metadata_store,
             plan,
             "failed",
             cached,
             http_status=None,
             error_text=str(exc.reason),
+            download_started_at=download_started_at,
+        )
+        record_download_status(
+            metadata_store,
+            plan,
+            "failed",
+            cached,
+            bytes_downloaded=_local_file_size(plan.zip_path),
+            progress_pct=_progress_percent(_local_file_size(plan.zip_path) or 0, cached.content_length),
+            download_started_at=download_started_at,
+            error_text=str(exc.reason),
         )
         raise RuntimeError(f"failed {plan.zip_path.name}: {exc.reason}") from exc
     except OSError as exc:
         record_fetch_history(
+            metadata_store,
             plan,
             "failed",
             cached,
             http_status=None,
+            error_text=str(exc),
+            download_started_at=download_started_at,
+        )
+        record_download_status(
+            metadata_store,
+            plan,
+            "failed",
+            cached,
+            bytes_downloaded=_local_file_size(plan.zip_path),
+            progress_pct=_progress_percent(_local_file_size(plan.zip_path) or 0, cached.content_length),
+            download_started_at=download_started_at,
             error_text=str(exc),
         )
         raise
@@ -521,8 +630,12 @@ def main() -> None:
         print("no downloads were configured", flush=True)
         return
 
+    metadata_store = SqliteDownloadMetadataStore(load_sqlite_metadata_config(config, root), metadata_sqlite_schema_path(root))
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as executor:
-        futures = [executor.submit(download_one, plan, args.force, args.progress_interval) for plan in plans]
+        futures = [
+            executor.submit(download_one, plan, args.force, args.progress_interval, metadata_store)
+            for plan in plans
+        ]
         for future in concurrent.futures.as_completed(futures):
             print(future.result())
 

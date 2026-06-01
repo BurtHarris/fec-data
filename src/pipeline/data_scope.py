@@ -70,6 +70,38 @@ def _normalize_group_tables(values: list[Any], context: str) -> list[str]:
     return normalized
 
 
+def _normalize_optional_text(value: Any, context: str) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise SystemExit(f"{context} must be a string")
+    return value.strip()
+
+
+def _normalize_metadata_database(config: dict[str, Any]) -> dict[str, Any] | None:
+    metadata_database = config.get("metadata_database")
+    if metadata_database is None:
+        return None
+    if not isinstance(metadata_database, dict):
+        raise SystemExit("metadata_database must be a mapping")
+
+    sqlite = metadata_database.get("sqlite")
+    if sqlite is None:
+        return None
+    if not isinstance(sqlite, dict):
+        raise SystemExit("metadata_database.sqlite must be a mapping")
+
+    path = _normalize_optional_text(sqlite.get("path"), "metadata_database.sqlite.path")
+    if not path:
+        raise SystemExit("metadata_database.sqlite.path must not be empty")
+
+    return {
+        "sqlite": {
+            "path": path,
+        }
+    }
+
+
 def normalize_data_scope_config(config: dict[str, Any]) -> dict[str, Any]:
     """Validate and normalize a raw Data Scope config mapping."""
 
@@ -88,7 +120,7 @@ def normalize_data_scope_config(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(dimensions, list) or not isinstance(facts, list):
         raise SystemExit("table_groups must define dimensions and facts lists")
 
-    return {
+    normalized = {
         "version": 1,
         "coverage": _format_year_range(coverage_range),
         "facts": _format_year_range(facts_range),
@@ -97,6 +129,10 @@ def normalize_data_scope_config(config: dict[str, Any]) -> dict[str, Any]:
             "facts": _normalize_group_tables(facts, "table_groups.facts"),
         },
     }
+    metadata_database = _normalize_metadata_database(config)
+    if metadata_database is not None:
+        normalized["metadata_database"] = metadata_database
+    return normalized
 
 
 def load_data_scope_config(path: Path) -> dict[str, Any]:

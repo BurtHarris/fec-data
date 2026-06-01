@@ -13,6 +13,7 @@ import yaml
 
 from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, load_data_scope_config, parse_year_range
 from pipeline.etl_config import repo_root
+from pipeline.metadata_store import DownloadMetadataStore, DownloadStatusRecord, build_sqlite_metadata_store
 from pipeline.web.command_runner import CommandAuditStore, CommandRequest, CommandRunner, CommandRunRecord
 from pipeline.web.upstream_changes import load_upstream_changes_report
 from pipeline.web.upstream_render import render_upstream_changes
@@ -369,20 +370,135 @@ def _format_record(record: CommandRunRecord) -> str:
     )
 
 
-def _render_dashboard(repo_root_path: Path, active_run: CommandRunRecord | None) -> str:
+def _format_progress_cell(status: DownloadStatusRecord) -> str:
+    if status.progress_pct is not None:
+        return f"{status.progress_pct:.1f}%"
+    if status.bytes_downloaded is not None and status.content_length is not None and status.content_length > 0:
+        return f"{(status.bytes_downloaded / status.content_length) * 100:.1f}%"
+    if status.fetch_status in {"downloaded", "not_modified"}:
+        return "100.0%"
+    return "n/a"
+
+
+def _format_bytes_cell(value: int | None) -> str:
+    if value is None:
+        return "n/a"
+    if value >= 1024 * 1024:
+        return f"{value / (1024 * 1024):.1f} MB"
+    if value >= 1024:
+        return f"{value / 1024:.1f} KB"
+    return f"{value} bytes"
+
+
+def _render_download_status_table(statuses: tuple[DownloadStatusRecord, ...]) -> str:
+    if not statuses:
+        return "<p class='muted'>No cycle/table download status is available yet.</p>"
+
+    rows = []
+    for status in statuses:
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(status.cycle))}</td>"
+            f"<td>{escape(status.table_name)}</td>"
+            f"<td>{escape(status.fetch_status)}</td>"
+            f"<td>{escape(_format_progress_cell(status))}</td>"
+            f"<td>{escape(_format_bytes_cell(status.bytes_downloaded))}</td>"
+            f"<td>{escape(_format_bytes_cell(status.content_length))}</td>"
+            f"<td>{escape(status.updated_at)}</td>"
+            f"<td>{escape(status.error_text or 'n/a')}</td>"
+            "</tr>"
+        )
+    return (
+        "<div style='overflow-x:auto'>"
+        "<table><thead><tr>"
+        "<th>Cycle</th><th>Table</th><th>Status</th><th>Progress</th>"
+        "<th>Downloaded</th><th>Total</th><th>Updated</th><th>Error</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+    )
+
+
+def _load_download_status_view(
+    repo_root_path: Path,
+    metadata_store: DownloadMetadataStore | None,
+) -> tuple[list[tuple[str, str]], str]:
+    if metadata_store is None:
+        return [
+            ("Status", "unavailable"),
+            ("Source DB", "metadata_database.sqlite is not configured"),
+        ], "<p class='muted'>Configure metadata_database.sqlite.path in config\\data_scope.yml to expose cycle/table download progress.</p>"
+
+    try:
+        statuses = metadata_store.list_download_statuses(limit=100)
+    except Exception as exc:
+        return [
+            ("Status", "unavailable"),
+            ("Source DB", metadata_store.source_label),
+            ("Message", str(exc)),
+        ], "<p class='muted'>The dashboard could not read download status from the metadata store.</p>"
+
+    downloading_count = sum(1 for status in statuses if status.fetch_status == "downloading")
+    summary_rows = [
+        ("Status", "ready"),
+        ("Source DB", metadata_store.source_label),
+        ("Tracked cycle/table pairs", str(len(statuses))),
+        ("Active downloads", str(downloading_count)),
+        ("Config path", str(repo_root_path / CANONICAL_DATA_SCOPE_PATH)),
+    ]
+    return summary_rows, _render_download_status_table(statuses)
+
+
+def _render_unavailable_upstream_changes(message: str) -> str:
+    class _UnavailableMetadataStore:
+        source_label = "metadata_database.sqlite is not configured"
+
+        @staticmethod
+        def load_successful_fetch_history() -> tuple[object, ...]:
+            raise RuntimeError(message)
+
+    return render_upstream_changes(load_upstream_changes_report(_UnavailableMetadataStore()))
+
+
+class _ErrorMetadataStore:
+    def __init__(self, source_label: str, message: str) -> None:
+        self.source_label = source_label
+        self._message = message
+
+    def list_download_statuses(self, limit: int = 100) -> tuple[DownloadStatusRecord, ...]:
+        raise RuntimeError(self._message)
+
+    def load_successful_fetch_history(self) -> tuple[object, ...]:
+        raise RuntimeError(self._message)
+
+
+def _render_dashboard(
+    repo_root_path: Path,
+    active_run: CommandRunRecord | None,
+    metadata_store: DownloadMetadataStore | None,
+) -> tuple[str, bool]:
     config_path = repo_root_path / CANONICAL_DATA_SCOPE_PATH
 
     try:
         config = load_data_scope_config(config_path)
+        scope_rows = [
+            ("Status", "configured"),
+            ("Coverage", str(config["coverage"])),
+            ("Facts", str(config["facts"])),
+            ("Dimension tables", ", ".join(config["table_groups"]["dimensions"]) or "(none)"),
+            ("Fact tables", ", ".join(config["table_groups"]["facts"]) or "(none)"),
+            ("Config path", str(config_path)),
+        ]
+        sqlite_config = config.get("metadata_database", {}).get("sqlite", {})
+        if isinstance(sqlite_config, dict) and sqlite_config.get("path"):
+            scope_rows.append(
+                (
+                    "Metadata DB",
+                    str(sqlite_config["path"]),
+                )
+            )
         scope_html = _render_detail_rows(
-            [
-                ("Status", "configured"),
-                ("Coverage", str(config["coverage"])),
-                ("Facts", str(config["facts"])),
-                ("Dimension tables", ", ".join(config["table_groups"]["dimensions"]) or "(none)"),
-                ("Fact tables", ", ".join(config["table_groups"]["facts"]) or "(none)"),
-                ("Config path", str(config_path)),
-            ]
+            scope_rows
         )
     except SystemExit as exc:
         scope_html = _render_detail_rows(
@@ -392,6 +508,8 @@ def _render_dashboard(repo_root_path: Path, active_run: CommandRunRecord | None)
                 ("Message", str(exc)),
             ]
         )
+
+    download_summary_rows, download_status_html = _load_download_status_view(repo_root_path, metadata_store)
 
     if active_run is None:
         run_html = (
@@ -412,6 +530,15 @@ def _render_dashboard(repo_root_path: Path, active_run: CommandRunRecord | None)
             ]
         )
 
+    dashboard_should_refresh = active_run is not None
+    if metadata_store is not None:
+        try:
+            dashboard_should_refresh = dashboard_should_refresh or any(
+                status.fetch_status == "downloading" for status in metadata_store.list_download_statuses(limit=100)
+            )
+        except Exception:
+            pass
+
     body_html = f"""
 <div class='dashboard-grid'>
   <section class='subpanel'>
@@ -425,8 +552,14 @@ def _render_dashboard(repo_root_path: Path, active_run: CommandRunRecord | None)
     {run_html}
   </section>
 </div>
+<section class='subpanel' style='margin-top: 1rem;'>
+  <h3>Download Progress</h3>
+  <p class='muted'>Each cycle/table pair reflects the latest MySQL-backed download status, including active progress while ZIP files stream.</p>
+  {_render_detail_rows(download_summary_rows)}
+  {download_status_html}
+</section>
 """
-    return render_shell("/dashboard", body_html=body_html)
+    return body_html, dashboard_should_refresh
 
 
 def _load_scope_view_state(config_path: Path) -> tuple[list[tuple[str, str]], str | None, str]:
@@ -440,14 +573,23 @@ def _load_scope_view_state(config_path: Path) -> tuple[list[tuple[str, str]], st
         ], str(exc), preview
 
     preview = yaml.safe_dump(config, sort_keys=False)
-    return [
+    summary_rows = [
         ("Status", "configured"),
         ("Config path", str(config_path)),
         ("Coverage", str(config["coverage"])),
         ("Facts", str(config["facts"])),
         ("Dimension tables", ", ".join(config["table_groups"]["dimensions"]) or "(none)"),
         ("Fact tables", ", ".join(config["table_groups"]["facts"]) or "(none)"),
-    ], None, preview
+    ]
+    sqlite_config = config.get("metadata_database", {}).get("sqlite", {})
+    if isinstance(sqlite_config, dict) and sqlite_config.get("path"):
+        summary_rows.append(
+            (
+                "Metadata DB",
+                str(sqlite_config["path"]),
+            )
+        )
+    return summary_rows, None, preview
 
 
 def _render_scope_editor(
@@ -686,17 +828,26 @@ def _render_runs(
 def create_app(
     repo_root_path: Path | None = None,
     runner: CommandRunner | None = None,
-    metadata_db_path: Path | None = None,
+    metadata_store: DownloadMetadataStore | None = None,
 ) -> FastAPI:
     """Create the operations web app instance."""
 
     app = FastAPI(title="MoneyTrail Operations", version="0.1.0")
     resolved_repo_root = repo_root_path or repo_root()
-    resolved_metadata_db_path = metadata_db_path or resolved_repo_root / Path("db") / "fec-metadata.sqlite"
     app_runner = runner
     if app_runner is None:
         store = CommandAuditStore(resolved_repo_root / Path("db") / "ops_web.sqlite")
         app_runner = CommandRunner(repo_root=resolved_repo_root, store=store)
+
+    def resolve_metadata_store() -> DownloadMetadataStore | None:
+        if metadata_store is not None:
+            return metadata_store
+        try:
+            return build_sqlite_metadata_store(resolved_repo_root)
+        except SystemExit:
+            return None
+        except Exception as exc:
+            return _ErrorMetadataStore("configured metadata store", str(exc))
 
     class RunSubmitPayload(BaseModel):
         command: str = Field(description="Allowlisted command: fetch, load, benchmark-load")
@@ -845,7 +996,13 @@ def create_app(
 
     @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
     def dashboard() -> HTMLResponse:
-        return HTMLResponse(content=_render_dashboard(resolved_repo_root, app_runner.get_active_run()))
+        dashboard_html, should_refresh = _render_dashboard(
+            resolved_repo_root,
+            app_runner.get_active_run(),
+            resolve_metadata_store(),
+        )
+        extra_head_html = "<meta http-equiv='refresh' content='10'>" if should_refresh else ""
+        return HTMLResponse(content=render_shell("/dashboard", body_html=dashboard_html, extra_head_html=extra_head_html))
 
     @app.get("/data-scope-config", response_class=HTMLResponse, include_in_schema=False)
     def data_scope_config() -> HTMLResponse:
@@ -873,7 +1030,15 @@ def create_app(
 
     @app.get("/upstream-changes", response_class=HTMLResponse, include_in_schema=False)
     def upstream_changes() -> HTMLResponse:
-        report = load_upstream_changes_report(resolved_metadata_db_path)
+        store = resolve_metadata_store()
+        if store is None:
+            return HTMLResponse(
+                content=render_shell(
+                    "/upstream-changes",
+                    body_html=_render_unavailable_upstream_changes("metadata_database.sqlite config is unavailable"),
+                )
+            )
+        report = load_upstream_changes_report(store)
         return HTMLResponse(content=render_shell("/upstream-changes", body_html=render_upstream_changes(report)))
 
     @app.get("/runs", response_class=HTMLResponse, include_in_schema=False)

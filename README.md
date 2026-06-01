@@ -7,7 +7,7 @@ MoneyTrail is a citizen‑developer project for loading the Federal Election Com
 Instead of relying on what political actors say, MoneyTrail makes it possible to observe what they actually do through their financial disclosures.
 
 Scope note: this setup is currently optimized for single-user local operation.
-Operational metadata and QA logs are stored in a local, single-user SQLite database.
+Download metadata and dashboard progress live in a SQLite database configured in `config/data_scope.yml`. Command audit logs remain in the local SQLite `db/ops_web.sqlite` store.
 
 Developer notes: [docs/matt-pocock-skills.md](docs/matt-pocock-skills.md)
 
@@ -16,7 +16,8 @@ Developer notes: [docs/matt-pocock-skills.md](docs/matt-pocock-skills.md)
 Run from repository root:
 
 1. Review/edit `config/data_scope.yml` for the cycles/tables you want.
-2. Run:
+2. Set `metadata_database.sqlite.path` in `config/data_scope.yml` to the SQLite database that should hold download tracking and dashboard status.
+3. Run:
 
 ```powershell
 uv sync
@@ -29,6 +30,7 @@ That is the default workflow.
 ## What You Get
 
 - ZIP files cached under `data/<cycle>/`
+- Download progress per cycle/table pair in the operations dashboard
 - Raw tables in DuckDB such as `raw_fec.cm_2026`
 - Benchmark outputs in `logs/load-timing/`
 
@@ -43,7 +45,7 @@ duckdb db/fec.duckdb "SELECT table_schema, table_name FROM information_schema.ta
 - Python 3.11+
 - `uv`
 - DuckDB CLI (optional, but useful for inspection)
-- SQLite (uses Python built-in `sqlite3`; no separate install required)
+- SQLite (for download metadata and dashboard progress)
 
 Optional tool bootstrap on Windows:
 

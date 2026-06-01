@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from statistics import median
+
+from pipeline.metadata_store import DownloadMetadataStore, FetchHistoryRecord
 
 
 SUCCESS_FETCH_STATUSES = {"downloaded", "fetched", "not_modified", "success"}
@@ -53,7 +53,7 @@ class UpstreamTableSummary:
 
 @dataclass(frozen=True)
 class UpstreamChangesReport:
-    source_path: Path
+    source_label: str
     status: str
     message: str
     successful_fetch_count: int = 0
@@ -79,35 +79,25 @@ class _FetchHistoryRow:
 
 
 def load_upstream_changes_report(
-    metadata_db_path: Path,
+    metadata_store: DownloadMetadataStore,
     recent_limit: int = 12,
     cadence_limit: int = 12,
     rollup_limit: int = 12,
 ) -> UpstreamChangesReport:
     """Load upstream metadata history and derive deterministic change analytics."""
 
-    if not metadata_db_path.exists():
-        return UpstreamChangesReport(
-            source_path=metadata_db_path,
-            status="unavailable",
-            message=f"Metadata history database not found: {metadata_db_path}",
-        )
-
-    conn = sqlite3.connect(metadata_db_path)
     try:
-        if not _table_exists(conn, "etl_fetch_history"):
-            return UpstreamChangesReport(
-                source_path=metadata_db_path,
-                status="unavailable",
-                message="Metadata history table etl_fetch_history is unavailable.",
-            )
-        rows = _load_successful_fetch_rows(conn)
-    finally:
-        conn.close()
+        rows = _load_successful_fetch_rows(metadata_store.load_successful_fetch_history())
+    except Exception as exc:
+        return UpstreamChangesReport(
+            source_label=metadata_store.source_label,
+            status="unavailable",
+            message=f"Metadata history is unavailable: {exc}",
+        )
 
     if not rows:
         return UpstreamChangesReport(
-            source_path=metadata_db_path,
+            source_label=metadata_store.source_label,
             status="empty",
             message="No successful fetch history is available yet.",
         )
@@ -128,7 +118,7 @@ def load_upstream_changes_report(
         else "Successful fetch history exists, but no upstream metadata shifts have been detected yet."
     )
     return UpstreamChangesReport(
-        source_path=metadata_db_path,
+        source_label=metadata_store.source_label,
         status=status,
         message=message,
         successful_fetch_count=len(rows),
@@ -142,54 +132,20 @@ def load_upstream_changes_report(
     )
 
 
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-        (table_name,),
-    ).fetchone()
-    return row is not None
-
-
-def _load_successful_fetch_rows(conn: sqlite3.Connection) -> list[_FetchHistoryRow]:
+def _load_successful_fetch_rows(history_rows: tuple[FetchHistoryRecord, ...]) -> list[_FetchHistoryRow]:
     records: list[_FetchHistoryRow] = []
-    rows = conn.execute(
-        """
-        SELECT
-            rowid,
-            fetch_id,
-            cycle,
-            table_name,
-            fetch_status,
-            http_status,
-            content_length,
-            last_modified,
-            etag,
-            fetched_at
-        FROM etl_fetch_history
-        WHERE TRIM(COALESCE(table_name, '')) != ''
-          AND TRIM(COALESCE(fetched_at, '')) != ''
-        ORDER BY
-            cycle ASC,
-            table_name ASC,
-            fetched_at ASC,
-            COALESCE(fetch_id, rowid) ASC,
-            rowid ASC
-        """
-    ).fetchall()
-
-    for row in rows:
-        rowid, fetch_id, cycle, table_name, fetch_status, http_status, content_length, last_modified, etag, fetched_at = row
-        if not _is_successful_fetch(fetch_status, http_status):
+    for row in history_rows:
+        if not _is_successful_fetch(row.fetch_status, row.http_status):
             continue
-        cycle_number = _normalize_cycle(cycle)
-        table = _normalize_text(table_name)
-        fetched = _normalize_text(fetched_at)
+        cycle_number = _normalize_cycle(row.cycle)
+        table = _normalize_text(row.table_name)
+        fetched = _normalize_text(row.fetched_at)
         if cycle_number is None or table is None or fetched is None:
             continue
         fetched_at_dt = _parse_timestamp(fetched)
         if fetched_at_dt is None:
             continue
-        sequence_number = int(fetch_id) if isinstance(fetch_id, int) else int(rowid)
+        sequence_number = row.fetch_id or len(records) + 1
         records.append(
             _FetchHistoryRow(
                 sequence_number=sequence_number,
@@ -197,9 +153,9 @@ def _load_successful_fetch_rows(conn: sqlite3.Connection) -> list[_FetchHistoryR
                 table_name=table,
                 fetched_at=fetched,
                 fetched_at_dt=fetched_at_dt,
-                etag=_normalize_text(etag),
-                last_modified=_normalize_text(last_modified),
-                content_length=_normalize_int(content_length),
+                etag=_normalize_text(row.etag),
+                last_modified=_normalize_text(row.last_modified),
+                content_length=_normalize_int(row.content_length),
             )
         )
 

@@ -48,7 +48,7 @@ def _render_upstream_metric_cards(report: UpstreamChangesReport) -> str:
 def render_upstream_changes(report: UpstreamChangesReport) -> str:
     source_rows = [
         ("Status", report.status),
-        ("Source DB", str(report.source_path)),
+        ("Source DB", report.source_label),
         ("Latest fetch", report.latest_fetch_at or "n/a"),
         ("Summary", report.message),
     ]
@@ -58,7 +58,7 @@ def render_upstream_changes(report: UpstreamChangesReport) -> str:
 <div class='stack'>
   <section class='subpanel'>
     <h3>Metadata history status</h3>
-    <p class='muted'>This screen reads historical fetch metadata from the local SQLite store and derives upstream ZIP change events when that history exists.</p>
+    <p class='muted'>This screen reads historical fetch metadata from the configured metadata store and derives upstream ZIP change events when that history exists.</p>
     {detail_rows}
   </section>
 </div>

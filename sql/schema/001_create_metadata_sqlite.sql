@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS etl_load_history (
 );
 
 CREATE TABLE IF NOT EXISTS etl_fetch_history (
-    fetch_id INTEGER,
+    fetch_id INTEGER PRIMARY KEY AUTOINCREMENT,
     cycle INTEGER,
     table_name TEXT,
     zip_name TEXT,
@@ -24,8 +24,32 @@ CREATE TABLE IF NOT EXISTS etl_fetch_history (
     last_modified TEXT,
     etag TEXT,
     local_file_size INTEGER,
+    bytes_downloaded INTEGER,
+    download_started_at TEXT,
     fetched_at TEXT,
     error_text TEXT
+);
+
+CREATE TABLE IF NOT EXISTS etl_download_status (
+    cycle INTEGER NOT NULL,
+    table_name TEXT NOT NULL,
+    zip_name TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    fetch_status TEXT NOT NULL,
+    http_status INTEGER,
+    content_length INTEGER,
+    response_date TEXT,
+    last_modified TEXT,
+    etag TEXT,
+    local_file_size INTEGER,
+    bytes_downloaded INTEGER,
+    progress_pct REAL,
+    download_started_at TEXT,
+    download_completed_at TEXT,
+    last_attempt_at TEXT NOT NULL,
+    error_text TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (cycle, table_name)
 );
 
 CREATE TABLE IF NOT EXISTS etl_qa_issue_log (

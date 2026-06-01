@@ -90,6 +90,27 @@ This writes a JSON report to `tmp/html_link_check_artifacts.json` and exits non-
 
 The repository now standardizes on the dbt `zipfs` loader path.
 
+### Dev Cycle Shortcuts (PowerShell)
+
+For quick local iteration, this repo includes two lightweight wrapper scripts under `scripts/`:
+
+```powershell
+# Start/restart the local ops dashboard and open the browser.
+# (Stops the previous server instance if needed.)
+.\scripts\web.ps1
+
+# Fetch/download using the current config in config/data_scope.yml.
+.\scripts\etl.ps1 fetch
+
+# Load using the current config (defaults to the latest facts cycle).
+.\scripts\etl.ps1 load
+
+# Or specify a cycle explicitly.
+.\scripts\etl.ps1 load -Cycle 2026
+```
+
+Use `-NoSync` if you already ran `uv sync` and want to skip dependency resolution.
+
 ### Operations Web App (Local Shell)
 
 Run the internal operations web app shell in local-trusted mode:

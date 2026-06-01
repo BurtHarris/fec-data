@@ -6,8 +6,15 @@ MoneyTrail is a citizen‑developer project for loading the Federal Election Com
 
 Instead of relying on what political actors say, MoneyTrail makes it possible to observe what they actually do through their financial disclosures.
 
-Scope note: this setup is currently optimized for single-user local operation.
+Scope note: this setup is currently optimized for single-user local operation. The operations web app UI has been downscoped to a read-only Monitoring & Health Dashboard — exposing only the /health and /history screens. Interactive run submission and other operational routes have been disabled (commented out) to prioritize a low-maintenance, read-only status page.
+
 Download metadata and dashboard progress live in a SQLite database configured in `config/data_scope.yml`. Command audit logs remain in the local SQLite `db/ops_web.sqlite` store.
+
+### Worktree & Branching
+
+For local development, prefer using Git worktrees to isolate features and experiments. Create a new worktree per branch (for example: `git worktree add ..\wt-<branch> <branch>`) so working directories remain independent from the main worktree. Use short, descriptive branch names (e.g., `feat/add-indiv-loader`, `fix/bench-crash`, `docs/update-readme`) and base feature branches on `main`. Open pull requests for review and keep worktrees short-lived; when work is complete, merge or rebase as appropriate and remove the worktree with `git worktree remove ..\wt-<branch>`.
+
+Commit messages should be clear and prefixed by type (e.g., `feat:`, `fix:`, `docs:`, `chore:`). Never commit large data or runtime artifacts — `data/`, `db/`, `logs/`, and `tmp/` are ignored. Keep worktree directories outside those runtime paths to avoid accidental commits of generated data.
 
 Developer notes: [docs/matt-pocock-skills.md](docs/matt-pocock-skills.md)
 

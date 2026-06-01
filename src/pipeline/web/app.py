@@ -15,16 +15,18 @@ from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, load_data_scope_confi
 from pipeline.etl_config import repo_root
 from pipeline.metadata_store import DownloadMetadataStore, DownloadStatusRecord, build_sqlite_metadata_store
 from pipeline.web.command_runner import CommandAuditStore, CommandRequest, CommandRunner, CommandRunRecord
+from pipeline.web.health import collect_health_metrics, render_health
 from pipeline.web.upstream_changes import load_upstream_changes_report
 from pipeline.web.upstream_render import render_upstream_changes
 
 
 SCREEN_ROUTES: tuple[tuple[str, str], ...] = (
-    ("/dashboard", "Dashboard"),
-    ("/runs", "Runs"),
-    ("/data-scope-config", "Data Scope Config"),
+    # ("/dashboard", "Dashboard"),
+    # ("/runs", "Runs"),
+    # ("/data-scope-config", "Data Scope Config"),
     ("/history", "History"),
-    ("/upstream-changes", "Upstream Changes"),
+    ("/health", "Health"),
+    # ("/upstream-changes", "Upstream Changes"),
 )
 
 def render_shell(active_path: str, body_html: str | None = None, extra_head_html: str = "") -> str:
@@ -90,7 +92,7 @@ def render_shell(active_path: str, body_html: str | None = None, extra_head_html
       .nav {{
         margin-top: 1rem;
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.5rem;
       }}
       .nav-link {{
@@ -1101,6 +1103,12 @@ def create_app(
         report = load_upstream_changes_report(store)
         return HTMLResponse(content=render_shell("/upstream-changes", body_html=render_upstream_changes(report)))
 
+    @app.get("/health", response_class=HTMLResponse, include_in_schema=False)
+    def health() -> HTMLResponse:
+        metrics = collect_health_metrics(resolved_repo_root, resolve_metadata_store(), app_runner)
+        body_html = render_health(metrics)
+        return HTMLResponse(content=render_shell("/health", body_html=body_html))
+
     @app.get("/runs", response_class=HTMLResponse, include_in_schema=False)
     def runs(run_number: int | None = None, message: str | None = None, error: str | None = None) -> HTMLResponse:
         _, scope_summary_rows, scope_error, scope_preview_yaml = _load_runs_scope_state(
@@ -1186,7 +1194,7 @@ def create_app(
         return RedirectResponse(url=f"/runs?{params}", status_code=303)
 
     for path, label in SCREEN_ROUTES:
-        if path in {"/dashboard", "/runs", "/data-scope-config", "/history", "/upstream-changes"}:
+        if path in {"/dashboard", "/runs", "/data-scope-config", "/history", "/upstream-changes", "/health"}:
             continue
 
         def render_page(page_path: str = path, page_label: str = label) -> HTMLResponse:

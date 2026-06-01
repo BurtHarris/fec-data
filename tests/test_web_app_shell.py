@@ -853,6 +853,167 @@ table_groups:
         for path, _ in SCREEN_ROUTES:
             self.assertIn(path, registered_paths)
 
+    def test_health_route_renders_duckdb_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            app = create_app(repo_root_path=root, runner=_StubRunner())
+            route = next((r for r in app.routes if getattr(r, "path", None) == "/health"), None)
+            assert route is not None
+
+            response = route.endpoint()
+            html = response.body.decode("utf-8")
+
+        self.assertIn("Health", html)
+        self.assertIn("DuckDB Database", html)
+        self.assertIn("DuckDB file not found", html)
+
+    def test_health_route_renders_cycle_summaries_from_metadata_store(self) -> None:
+        metadata_store = _build_metadata_store(
+            statuses=(
+                DownloadStatusRecord(
+                    cycle=2024,
+                    table_name="indiv",
+                    zip_name="indiv24.zip",
+                    source_url="https://example.test/indiv24.zip",
+                    fetch_status="downloaded",
+                    http_status=200,
+                    content_length=200,
+                    response_date=None,
+                    last_modified=None,
+                    etag=None,
+                    local_file_size=200,
+                    bytes_downloaded=200,
+                    progress_pct=100.0,
+                    download_started_at="2024-01-01T00:00:00Z",
+                    download_completed_at="2024-01-01T00:05:00Z",
+                    last_attempt_at="2024-01-01T00:05:00Z",
+                    updated_at="2024-01-01T00:05:00Z",
+                ),
+                DownloadStatusRecord(
+                    cycle=2024,
+                    table_name="cm",
+                    zip_name="cm24.zip",
+                    source_url="https://example.test/cm24.zip",
+                    fetch_status="error",
+                    http_status=503,
+                    content_length=None,
+                    response_date=None,
+                    last_modified=None,
+                    etag=None,
+                    local_file_size=None,
+                    bytes_downloaded=None,
+                    progress_pct=None,
+                    download_started_at=None,
+                    download_completed_at=None,
+                    last_attempt_at="2024-01-01T00:01:00Z",
+                    updated_at="2024-01-01T00:01:00Z",
+                    error_text="HTTP 503",
+                ),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            app = create_app(repo_root_path=root, runner=_StubRunner(), metadata_store=metadata_store)
+            route = next((r for r in app.routes if getattr(r, "path", None) == "/health"), None)
+            assert route is not None
+
+            response = route.endpoint()
+            html = response.body.decode("utf-8")
+
+        self.assertIn("Download Status by Cycle", html)
+        self.assertIn("2024", html)
+        self.assertIn("1 failed", html)
+        self.assertIn("2024-01-01T00:05:00Z", html)
+
+    def test_health_route_renders_failed_and_completed_runs(self) -> None:
+        runner = _StubRunner()
+        runner._records = {
+            1: CommandRunRecord(
+                run_number=1,
+                requested_at="2026-05-31T12:00:00Z",
+                operator_id="alice",
+                command="load",
+                payload_json="{}",
+                admission_status="admitted",
+                rejection_reason=None,
+                launch_status="launched",
+                launch_error=None,
+                launched_at="2026-05-31T12:00:05Z",
+                pid=100,
+                command_line="uv run load",
+                log_path="logs\\run-1.log",
+                lifecycle_state="completed",
+                completed_at="2026-05-31T12:10:00Z",
+                exit_code=0,
+            ),
+            2: CommandRunRecord(
+                run_number=2,
+                requested_at="2026-05-31T13:00:00Z",
+                operator_id="bob",
+                command="fetch",
+                payload_json="{}",
+                admission_status="admitted",
+                rejection_reason=None,
+                launch_status="launched",
+                launch_error=None,
+                launched_at="2026-05-31T13:00:05Z",
+                pid=200,
+                command_line="uv run fetch",
+                log_path="logs\\run-2.log",
+                lifecycle_state="failed",
+                completed_at="2026-05-31T13:05:00Z",
+                exit_code=1,
+            ),
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            app = create_app(repo_root_path=root, runner=runner)
+            route = next((r for r in app.routes if getattr(r, "path", None) == "/health"), None)
+            assert route is not None
+
+            response = route.endpoint()
+            html = response.body.decode("utf-8")
+
+        self.assertIn("Recent Failed / Canceled Runs", html)
+        self.assertIn("Recent Completed Runs", html)
+        self.assertIn("failed", html)
+        self.assertIn("load", html)  # alice's completed run command
+        self.assertIn("bob", html)
+        self.assertIn("alice", html)
+
+    def test_health_route_renders_log_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            log_file = root / "logs" / "ops-web" / "run-1.log"
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            log_file.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+            app = create_app(repo_root_path=root, runner=_StubRunner())
+            route = next((r for r in app.routes if getattr(r, "path", None) == "/health"), None)
+            assert route is not None
+
+            response = route.endpoint()
+            html = response.body.decode("utf-8")
+
+        self.assertIn("Log Tail", html)
+        self.assertIn("alpha", html)
+        self.assertIn("beta", html)
+        self.assertIn("gamma", html)
+
+    def test_health_route_renders_no_logs_empty_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            app = create_app(repo_root_path=root, runner=_StubRunner())
+            route = next((r for r in app.routes if getattr(r, "path", None) == "/health"), None)
+            assert route is not None
+
+            response = route.endpoint()
+            html = response.body.decode("utf-8")
+
+        self.assertIn("No log files found", html)
+
 
 if __name__ == "__main__":
     unittest.main()

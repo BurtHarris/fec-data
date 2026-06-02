@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Airflow Prototype Cheat Sheet</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: #fffaf2;
+      --ink: #1f1a17;
+      --muted: #655b52;
+      --accent: #0f766e;
+      --warn: #b45309;
+      --danger: #991b1b;
+      --border: #d9cbb8;
+      --code: #2a241f;
+      --code-bg: #f1e6d8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at top left, rgba(15,118,110,0.10), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(180,83,9,0.10), transparent 30%),
+        var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+    h1, h2, h3 {
+      font-family: Cambria, Georgia, serif;
+      line-height: 1.15;
+      margin: 0 0 12px;
+    }
+    h1 {
+      font-size: 2.3rem;
+      letter-spacing: 0.01em;
+      margin-bottom: 10px;
+    }
+    h2 {
+      font-size: 1.4rem;
+      margin-top: 28px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    p, li { font-size: 1rem; }
+    .lead {
+      color: var(--muted);
+      max-width: 74ch;
+      margin-bottom: 22px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 18px 14px;
+      margin: 16px 0;
+      box-shadow: 0 10px 30px rgba(31,26,23,0.06);
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+    @media (min-width: 860px) {
+      .grid.two {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    .tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      background: rgba(15,118,110,0.12);
+      color: var(--accent);
+    }
+    .warn {
+      border-left: 5px solid var(--warn);
+      padding-left: 12px;
+    }
+    .danger {
+      border-left: 5px solid var(--danger);
+      padding-left: 12px;
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: var(--code);
+    }
+    pre {
+      margin: 10px 0 14px;
+      background: var(--code);
+      color: #f9eee0;
+      padding: 14px;
+      overflow-x: auto;
+      border-radius: 12px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.93rem;
+    }
+    ol, ul {
+      margin: 10px 0 14px 22px;
+      padding: 0;
+    }
+    .mini {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .decision {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="tag">Prototype Operator Sheet</div>
+    <h1>Airflow-First Prototype Cheat Sheet</h1>
+    <p class="lead">Use this page when you want to understand what to run, what not to run, and when native Windows is good enough versus when you should switch to a container or WSL2.</p>
+
+    <div class="panel danger">
+      <h2>What Failed On Windows</h2>
+      <p>The real Airflow scheduler and webserver startup path failed on native Windows because Airflow's daemon path imports the POSIX-only <code>pwd</code> module. That means the browser-observable Airflow UI path is not the right prototype path on this machine.</p>
+      <p><strong>Implication:</strong> native Windows is fine for smoke tests and in-process <code>dag.test()</code> style validation, but not for reliable scheduler/webserver observation.</p>
+    </div>
+
+    <div class="grid two">
+      <section class="panel">
+        <h2>Use This On Native Windows</h2>
+        <ol>
+          <li>Run the smoke tests.</li>
+          <li>Use the domain observation database as your evidence source.</li>
+          <li>Treat this as logic validation, not live scheduler validation.</li>
+        </ol>
+        <pre>d:/fec-data/.venv/Scripts/python.exe -m unittest tests.test_airflow_first_smoke -v</pre>
+        <p class="mini">This verifies schema bootstrap, change detection, snapshot updates, compact failure diagnostics, DAG defaults, and manual override validation.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Do Not Expect This To Work Natively</h2>
+        <pre>airflow scheduler
+airflow webserver --port 8080</pre>
+        <p class="mini">These commands are the right shape for Linux, WSL2, or a container, but they are not the correct expectation for native Windows in this prototype.</p>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Fastest Native Windows Validation Loop</h2>
+      <ol>
+        <li>Run the smoke test suite.</li>
+        <li>Inspect <code>db/fec-observations.sqlite</code> if you want proof rows.</li>
+        <li>Use the optional SQL checks from the runbook.</li>
+      </ol>
+      <pre>duckdb -c "ATTACH 'db/fec-observations.sqlite' AS obs (TYPE SQLITE); SELECT observed_at, cycle, table_name, fetch_status, change_detected, dag_run_id, map_index, try_number FROM obs.airflow_upstream_observation_history ORDER BY observation_id DESC LIMIT 20;"</pre>
+    </section>
+
+    <section class="panel warn">
+      <h2>Containerization Advice</h2>
+      <p class="decision">Recommendation: yes, containerize if you want to observe the real Airflow UI and scheduler behavior.</p>
+      <p>Containerization is justified here because the failure mode is platform-related, not an app logic bug. Your prototype already proved that:</p>
+      <ul>
+        <li>The DAG and persistence logic parse and run inside Python.</li>
+        <li>The full Airflow daemon path breaks because native Windows is not a supported target for this workflow.</li>
+        <li>The web UI is part of what you want to evaluate, so you need a runtime that can actually host it.</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>When To Containerize</h2>
+      <ul>
+        <li>Containerize now if your next question is, "What does the DAG look like in the Airflow UI?"</li>
+        <li>Do not containerize yet if your next question is only, "Does the observation logic work?"</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Best Next Runtime Options</h2>
+      <div class="grid two">
+        <div>
+          <h3>Option A: WSL2</h3>
+          <p>Best if you want a lighter-weight Linux runtime on the same machine.</p>
+          <ul>
+            <li>Good for real Airflow scheduler and webserver.</li>
+            <li>Closer to normal local developer workflow.</li>
+            <li>Lower setup overhead than full container orchestration.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Option B: Docker Compose</h3>
+          <p>Best if you want a reproducible prototype environment you can restart cleanly.</p>
+          <ul>
+            <li>Good if this prototype may be shared or repeated.</li>
+            <li>Makes runtime dependencies explicit.</li>
+            <li>Separates Airflow dependencies from your current dbt-oriented venv.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>My Advice</h2>
+      <p>If your immediate goal is observation, not more code, use a container or WSL2 next. The reason is simple: the main missing capability is the live Airflow UI, and native Windows is exactly where that path is breaking.</p>
+      <p>If you want the lowest-friction prototype move, I would choose <strong>WSL2 first</strong>. If you want the cleanest long-lived evaluation environment, I would choose <strong>Docker Compose</strong>.</p>
+    </section>
+
+    <section class="panel">
+      <h2>What To Ask For Next</h2>
+      <ul>
+        <li>"Set up a minimal Docker Compose for this Airflow prototype."</li>
+        <li>"Run bash scripts/wsl2-airflow-setup.sh and start scheduler/webserver via scripts/wsl2-airflow-run.sh."</li>
+        <li>"Show me one native-Windows evidence note from the observation DB."</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

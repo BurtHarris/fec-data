@@ -54,6 +54,34 @@ duckdb db/fec.duckdb "SELECT table_schema, table_name FROM information_schema.ta
 - DuckDB CLI (optional, but useful for inspection)
 - SQLite (for download metadata and dashboard progress)
 
+## Airflow Prototype On WSL2
+
+For the Airflow-first prototype (scheduler + web UI), run inside WSL2 instead of native Windows.
+
+From repo root in WSL2:
+
+```bash
+bash scripts/wsl2-airflow-setup.sh
+```
+
+Then start Airflow in two terminals:
+
+```bash
+bash scripts/wsl2-airflow-run.sh scheduler
+```
+
+```bash
+bash scripts/wsl2-airflow-run.sh webserver
+```
+
+Open `http://127.0.0.1:8080` and log in with `admin` / `admin` (override via `AIRFLOW_ADMIN_*` env vars before setup).
+
+To run SQL evidence checks after a DAG run:
+
+```bash
+duckdb -c "ATTACH 'db/fec-observations.sqlite' AS obs (TYPE SQLITE); SELECT observed_at, cycle, table_name, fetch_status, http_status, change_detected, dag_run_id, map_index, try_number FROM obs.airflow_upstream_observation_history ORDER BY observation_id DESC LIMIT 20;"
+```
+
 Optional tool bootstrap on Windows:
 
 ```powershell

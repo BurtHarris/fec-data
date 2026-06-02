@@ -2,6 +2,15 @@
 
 This runbook is for the Airflow-first evaluation branch and assumes a developer who is new to Airflow.
 
+## Windows Note
+
+Native Windows can run the lightweight in-process prototype checks such as `dag.test()` and the smoke test suite, but the full Airflow scheduler and webserver path is not reliable here. In this environment, the CLI webserver and scheduler commands fail before startup because Airflow's daemon path imports POSIX-only modules.
+
+Use this split:
+
+- Native Windows: validate prototype behavior with the smoke tests and `dag.test()`.
+- WSL2 or Linux container: use the full Airflow UI and scheduler/webserver flow.
+
 ## What This Runbook Covers
 
 - Start Airflow on localhost.
@@ -22,31 +31,33 @@ This runbook is for the Airflow-first evaluation branch and assumes a developer 
 
 ## 1. Start Airflow (Localhost Only)
 
-From repo root:
+This section is intended for WSL2 or another Linux environment. Do not expect it to work on native Windows for this prototype.
 
-```powershell
-$env:AIRFLOW_HOME = (Resolve-Path .).Path + "\\tmp\\airflow-home"
-$env:AIRFLOW__CORE__DAGS_FOLDER = (Resolve-Path .\\dags).Path
-$env:AIRFLOW__DATABASE__SQL_ALCHEMY_CONN = "sqlite:///" + ((Resolve-Path .\\db).Path -replace "\\","/") + "/airflow-runtime.sqlite"
-$env:AIRFLOW__WEBSERVER__WEB_SERVER_HOST = "127.0.0.1"
+From repo root in WSL2:
 
-airflow db migrate
-airflow users create --username admin --firstname Local --lastname Admin --role Admin --email local@example.com --password admin
+```bash
+bash scripts/wsl2-airflow-setup.sh
 ```
+
+This bootstraps a dedicated WSL venv at `.venv-airflow-wsl`, installs Airflow with Linux constraints, configures `AIRFLOW_HOME`, and initializes `db/airflow-runtime.sqlite`.
 
 Start scheduler and webserver in separate terminals:
 
-```powershell
-airflow scheduler
+```bash
+bash scripts/wsl2-airflow-run.sh scheduler
 ```
 
-```powershell
-airflow webserver --port 8080
+```bash
+bash scripts/wsl2-airflow-run.sh webserver
 ```
 
 Open `http://127.0.0.1:8080`.
 
+If you are staying on native Windows, skip the web UI steps and use the smoke tests plus `dag.test()` instead.
+
 ## 2. Trigger One Manual DAG Run
+
+For native Windows prototype validation, use `dag.test()` rather than the web UI trigger path.
 
 In Airflow UI, open DAG `upstream_metadata_scan_v1` and trigger with config.
 
@@ -71,11 +82,11 @@ Allowed manual overrides are limited to `cycles` and `tables`.
 
 Inspect data in the domain observation DB:
 
-```powershell
+```bash
 duckdb -c "ATTACH 'db/fec-observations.sqlite' AS obs (TYPE SQLITE); SELECT observed_at, cycle, table_name, fetch_status, http_status, change_detected, dag_run_id, map_index, try_number FROM obs.airflow_upstream_observation_history ORDER BY observation_id DESC LIMIT 20;"
 ```
 
-```powershell
+```bash
 duckdb -c "ATTACH 'db/fec-observations.sqlite' AS obs (TYPE SQLITE); SELECT cycle, table_name, fetch_status, last_observed_at, updated_at, dag_run_id FROM obs.airflow_upstream_snapshot ORDER BY cycle DESC, table_name ASC;"
 ```
 

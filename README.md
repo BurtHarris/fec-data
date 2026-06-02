@@ -82,6 +82,17 @@ To run SQL evidence checks after a DAG run:
 duckdb -c "ATTACH 'db/fec-observations.sqlite' AS obs (TYPE SQLITE); SELECT observed_at, cycle, table_name, fetch_status, http_status, change_detected, dag_run_id, map_index, try_number FROM obs.airflow_upstream_observation_history ORDER BY observation_id DESC LIMIT 20;"
 ```
 
+### VS Code One-Click Tasks For WSL Airflow
+
+If you prefer VS Code task runners over manual terminal commands:
+
+1. Open Command Palette and run `Tasks: Run Task`.
+2. Run `Airflow WSL: setup` once.
+3. Run `Airflow WSL: start scheduler + webserver`.
+4. Run `Airflow WSL: open UI` to launch `http://127.0.0.1:8080`.
+
+The tasks use `wsl.exe` from Windows-hosted VS Code and execute the Linux scripts in this repo.
+
 Optional tool bootstrap on Windows:
 
 ```powershell

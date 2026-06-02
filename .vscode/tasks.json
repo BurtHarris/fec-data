@@ -1,0 +1,73 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Airflow WSL: setup",
+            "type": "shell",
+            "command": "wsl.exe",
+            "args": [
+                "bash",
+                "-lc",
+                "cd /mnt/d/fec-data && bash scripts/wsl2-airflow-setup.sh"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            "label": "Airflow WSL: scheduler",
+            "type": "shell",
+            "command": "wsl.exe",
+            "args": [
+                "bash",
+                "-lc",
+                "cd /mnt/d/fec-data && bash scripts/wsl2-airflow-run.sh scheduler"
+            ],
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Airflow WSL: webserver",
+            "type": "shell",
+            "command": "wsl.exe",
+            "args": [
+                "bash",
+                "-lc",
+                "cd /mnt/d/fec-data && bash scripts/wsl2-airflow-run.sh webserver"
+            ],
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Airflow WSL: start scheduler + webserver",
+            "dependsOrder": "parallel",
+            "dependsOn": [
+                "Airflow WSL: scheduler",
+                "Airflow WSL: webserver"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Airflow WSL: open UI",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-Command",
+                "Start-Process http://127.0.0.1:8080"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}

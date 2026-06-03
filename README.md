@@ -1,62 +1,50 @@
-# Docker + VS Code Dev Container (Docker-First)
+# FEC Data ELT (Pre-Release)
 
-This repository is configured for a Docker-first workflow using VS Code Dev Containers.
+This repository is an early-stage data engineering project for ingesting and analyzing Federal Election Commission (FEC) bulk campaign finance data. The current architecture is ELT: source files are landed as immutable raw artifacts, then loaded and transformed inside DuckDB into analysis-ready models.
 
-- Daily development runs in a Linux dev container.
-- Windows-specific setup is limited to installing Docker Desktop (plus VS Code) via Winget Configure.
-- Project dependencies and tooling are provisioned inside the container through `scripts/setup-tools.sh`.
+The project is still pre-release. Expect active iteration in schemas, transform sequencing, and orchestration while data quality and performance are tuned.
 
-## Repository Layout For Bootstrap
+## Documentation
 
-```text
-/scripts
-  setup-tools.sh
-/.devcontainer
-  devcontainer.json
-windows-bootstrap.dsc.yaml
-README.md
-```
+- [Developer Setup](docs/developer_setup.md): Dev Container workflow, host prerequisites, and performance-oriented clone guidance.
+- [Project Context](CONTEXT.md): domain and working context for this repository.
+- [Architecture Decisions](docs/adr): decision records tracked during project evolution.
 
-## 1) Bootstrap Windows Host (Docker Prerequisites)
+## Project Goals
 
-Run from an elevated Windows terminal:
+- Build a reproducible local ELT workflow for FEC bulk data.
+- Preserve source-of-truth raw files and make downstream transforms deterministic.
+- Produce trustworthy analytic tables with clear, SQL-first quality checks.
+- Keep orchestration lightweight and observable during early evaluation.
 
-```bash
-winget configure --file windows-bootstrap.dsc.yaml --accept-configuration-agreements
-```
+## ELT Scope
 
-This installs host-level prerequisites only:
+- Extract: download official FEC bulk ZIP artifacts.
+- Load: ingest source data into DuckDB with stable schema conventions.
+- Transform: apply SQL/dbt modeling and validation checks for analyst use.
 
-- Docker Desktop
-- Visual Studio Code
+## Current Status
 
-## 2) Open In VS Code Dev Container
+- Stage: pre-release / active development
+- Primary datastore: DuckDB
+- Modeling approach: SQL/dbt-based transforms
+- Reliability posture: improving through audits, smoke tests, and iterative hardening
 
-From VS Code:
+## Repository Structure (High Level)
 
-1. Open this repository folder.
-2. Run `Dev Containers: Reopen in Container`.
-3. Wait for post-create setup to finish.
+- config: data scope and source-coverage configuration
+- models: raw FEC dbt models
+- sql/schema and sql/transform: schema creation and ELT SQL
+- sql/qa: quality, audit, and anomaly checks
+- dags: Airflow-first evaluation workflows
+- src/pipeline: Python pipeline utilities
+- tests: smoke tests and validation checks
+- artifacts: analysis, diagrams, reviews, and exploration output
 
-The container setup runs `bash scripts/setup-tools.sh`, which installs project CLI dependencies in the Linux container.
+## Early Adopter Notes
 
-If you already had this container open before these settings were added, run the bootstrap once manually:
+- Backward compatibility is not guaranteed yet.
+- Data model names and load sequencing may be refined.
+- Performance characteristics will continue to improve as datasets scale.
 
-```bash
-bash scripts/setup-tools.sh
-```
-
-## 3) Verify Tooling Inside The Container
-
-Open a terminal in the container and verify:
-
-```bash
-uv --version
-duckdb --version
-```
-
-## Why This Is Docker-First
-
-The development runtime is the container, not the host OS. This keeps contributor environments consistent and avoids host-specific dependency drift.
-
-Windows artifacts are intentionally limited to Docker-host provisioning via `windows-bootstrap.dsc.yaml`.
+For setup and environment instructions, see [Developer Setup](docs/developer_setup.md).

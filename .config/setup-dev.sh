@@ -72,6 +72,16 @@ install_uv() {
   export PATH="${HOME}/.local/bin:${PATH}"
 }
 
+ensure_user_local_bin_on_path() {
+  if ! grep -q '\.local/bin' "${HOME}/.bashrc"; then
+    {
+      echo ''
+      echo '# user-local binaries (uv, etc.)'
+      echo 'export PATH="$HOME/.local/bin:$PATH"'
+    } >> "${HOME}/.bashrc"
+  fi
+}
+
 install_duckdb_cli() {
   if command -v duckdb >/dev/null 2>&1; then
     return 0
@@ -121,6 +131,7 @@ ensure_symlink /usr/bin/batcat /usr/local/bin/bat
 install_pyenv
 install_uv
 install_duckdb_cli
+ensure_user_local_bin_on_path
 
 if ! grep -q 'PYENV_ROOT="$HOME/.pyenv"' "${HOME}/.bashrc"; then
   {

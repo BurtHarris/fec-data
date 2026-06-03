@@ -11,7 +11,7 @@ This repository is configured for a Docker-first workflow using VS Code Dev Cont
 ```text
 /scripts
   setup-tools.sh
-/devcontainer
+/.devcontainer
   devcontainer.json
 windows-bootstrap.dsc.yaml
 README.md
@@ -39,6 +39,12 @@ From VS Code:
 3. Wait for post-create setup to finish.
 
 The container setup runs `bash scripts/setup-tools.sh`, which installs project CLI dependencies in the Linux container.
+
+If you already had this container open before these settings were added, run the bootstrap once manually:
+
+```bash
+bash scripts/setup-tools.sh
+```
 
 ## 3) Verify Tooling Inside The Container
 

@@ -15,7 +15,7 @@ This repository is configured for a Docker-first workflow using VS Code Dev Cont
 ```text
 /scripts
   setup-tools.sh
-/devcontainer
+/.devcontainer
   devcontainer.json
 windows-bootstrap.dsc.yaml
 /docs
@@ -59,7 +59,7 @@ This preserves normal Git/editor workflow while keeping heavy ETL I/O off slower
 
 ## 3) Apply Updated Devcontainer Mounts (One-Time)
 
-If you pulled recent changes to `devcontainer/devcontainer.json`, rebuild once to apply new mounts.
+If you pulled recent changes to `.devcontainer/devcontainer.json`, rebuild once to apply new mounts.
 
 From VS Code:
 

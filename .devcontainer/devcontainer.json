@@ -1,33 +1,36 @@
 {
   "name": "fec-data-dev",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "dockerFile": "Dockerfile",
+
+  // --- Persistent storage volumes ---
   "mounts": [
-    "source=fec-data-data,target=/workspaces/fec-data/data,type=volume",
-    "source=fec-data-db,target=/workspaces/fec-data/db,type=volume"
+    "source=fec_data,target=/workspaces/fec-data/data,type=volume",
+    "source=fec_db,target=/workspaces/fec-data/db,type=volume"
   ],
-  "remoteEnv": {
+
+  // --- Environment variables (critical) ---
+  "containerEnv": {
     "FEC_DATA_DIR": "/workspaces/fec-data/data",
     "FEC_DB_DIR": "/workspaces/fec-data/db"
   },
-  "remoteUser": "vscode",
-  "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "installZsh": false,
-      "username": "vscode",
-      "upgradePackages": true
-    }
-  },
-  "postCreateCommand": "bash scripts/setup-tools.sh || true",
+
+  // --- VS Code extensions ---
   "customizations": {
     "vscode": {
-      "settings": {
-        "terminal.integrated.defaultProfile.linux": "bash"
-      },
       "extensions": [
-        "ms-vscode-remote.remote-containers",
-        "ms-azuretools.vscode-docker",
-        "charliermarsh.ruff"
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker"
       ]
     }
-  }
+  },
+
+  // --- Docker-in-Docker support ---
+  "runArgs": [
+    "--init",
+    "--privileged"
+  ],
+
+  "remoteUser": "vscode"
 }

@@ -8,13 +8,15 @@
 /data/processed/*
 !/data/processed/.gitkeep
 
-# Exclude everything under data and db directories
+# Exclude everything under data and db, and tmp directories
 /data/*
 !/data/raw/.gitkeep
 !/data/staging/.gitkeep
 !/data/processed/.gitkeep
 /db/*
 !/db/.gitkeep
+/tmp/*
+!/tmp/.gitkeep
 
 # Local DuckDB database artifacts
 /db/*.duckdb

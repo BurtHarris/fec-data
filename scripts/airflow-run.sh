@@ -4,10 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-# shellcheck source=scripts/wsl2-airflow-env.sh
-source "${SCRIPT_DIR}/wsl2-airflow-env.sh"
+# shellcheck source=scripts/airflow-env.sh
+source "${SCRIPT_DIR}/airflow-env.sh"
 
-AIRFLOW_VENV="${AIRFLOW_VENV:-${REPO_ROOT}/.venv-airflow-wsl}"
+AIRFLOW_VENV="${AIRFLOW_VENV:-${REPO_ROOT}/.venv-airflow}"
 AIRFLOW_PORT="${AIRFLOW_PORT:-8080}"
 AIRFLOW_ADMIN_USER="${AIRFLOW_ADMIN_USER:-admin}"
 AIRFLOW_ADMIN_PASSWORD="${AIRFLOW_ADMIN_PASSWORD:-admin}"
@@ -16,7 +16,7 @@ AIRFLOW_ADMIN_LASTNAME="${AIRFLOW_ADMIN_LASTNAME:-Admin}"
 AIRFLOW_ADMIN_EMAIL="${AIRFLOW_ADMIN_EMAIL:-local@example.com}"
 
 if [[ ! -f "${AIRFLOW_VENV}/bin/activate" ]]; then
-  echo "Missing ${AIRFLOW_VENV}. Run bash scripts/wsl2-airflow-setup.sh first."
+  echo "Missing ${AIRFLOW_VENV}. Run bash scripts/airflow-setup.sh first."
   exit 1
 fi
 
@@ -52,7 +52,7 @@ case "${command_name}" in
     ;;
   *)
     cat <<'USAGE'
-Usage: bash scripts/wsl2-airflow-run.sh <command>
+Usage: bash scripts/airflow-run.sh <command>
 
 Commands:
   init          Run airflow db migrate

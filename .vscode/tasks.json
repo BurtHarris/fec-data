@@ -2,13 +2,11 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Airflow WSL: setup",
+            "label": "Airflow: setup",
             "type": "shell",
-            "command": "wsl.exe",
+            "command": "bash",
             "args": [
-                "bash",
-                "-lc",
-                "cd /mnt/d/fec-data && bash scripts/wsl2-airflow-setup.sh"
+                "scripts/airflow-setup.sh"
             ],
             "problemMatcher": [],
             "presentation": {
@@ -18,13 +16,12 @@
             }
         },
         {
-            "label": "Airflow WSL: scheduler",
+            "label": "Airflow: scheduler",
             "type": "shell",
-            "command": "wsl.exe",
+            "command": "bash",
             "args": [
-                "bash",
-                "-lc",
-                "cd /mnt/d/fec-data && bash scripts/wsl2-airflow-run.sh scheduler"
+                "scripts/airflow-run.sh",
+                "scheduler"
             ],
             "isBackground": true,
             "problemMatcher": [],
@@ -34,13 +31,12 @@
             }
         },
         {
-            "label": "Airflow WSL: webserver",
+            "label": "Airflow: webserver",
             "type": "shell",
-            "command": "wsl.exe",
+            "command": "bash",
             "args": [
-                "bash",
-                "-lc",
-                "cd /mnt/d/fec-data && bash scripts/wsl2-airflow-run.sh webserver"
+                "scripts/airflow-run.sh",
+                "webserver"
             ],
             "isBackground": true,
             "problemMatcher": [],
@@ -50,22 +46,21 @@
             }
         },
         {
-            "label": "Airflow WSL: start scheduler + webserver",
+            "label": "Airflow: start scheduler + webserver",
             "dependsOrder": "parallel",
             "dependsOn": [
-                "Airflow WSL: scheduler",
-                "Airflow WSL: webserver"
+                "Airflow: scheduler",
+                "Airflow: webserver"
             ],
             "problemMatcher": []
         },
         {
-            "label": "Airflow WSL: open UI",
+            "label": "Airflow: open UI",
             "type": "shell",
-            "command": "powershell",
+            "command": "bash",
             "args": [
-                "-NoProfile",
-                "-Command",
-                "Start-Process http://127.0.0.1:8080"
+                "-lc",
+                "if command -v xdg-open >/dev/null 2>&1; then xdg-open http://127.0.0.1:8080; else echo 'Open http://127.0.0.1:8080 in your browser'; fi"
             ],
             "problemMatcher": []
         }

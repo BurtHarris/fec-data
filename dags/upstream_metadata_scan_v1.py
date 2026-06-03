@@ -16,6 +16,7 @@ if str(SRC_PATH) not in sys.path:
 
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowFailException
+from airflow.operators.python import get_current_context
 from airflow.utils.trigger_rule import TriggerRule
 
 from pipeline.airflow_observation_store import (
@@ -32,7 +33,7 @@ from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH
 DAG_ID = "upstream_metadata_scan_v1"
 DEFAULT_DATA_SCOPE_CONFIG = CANONICAL_DATA_SCOPE_PATH
 DOMAIN_OBSERVATION_DB = Path("db") / "fec-observations.sqlite"
-DEFAULT_SCAN_INTERVAL = timedelta(hours=6)
+MANUAL_TRIGGER_ONLY_SCHEDULE = None
 DEFAULT_RETRIES = 2
 DEFAULT_RETRY_DELAY = timedelta(minutes=2)
 DEFAULT_USER_AGENT = "moneytrail-airflow-scan/0.1"
@@ -53,7 +54,7 @@ def _head_request(url: str) -> tuple[int, dict[str, str]]:
 
 @dag(
     dag_id=DAG_ID,
-    schedule=DEFAULT_SCAN_INTERVAL,
+    schedule=MANUAL_TRIGGER_ONLY_SCHEDULE,
     start_date=FIXED_START_DATE_UTC,
     catchup=False,
     max_active_runs=1,
@@ -63,7 +64,7 @@ def _head_request(url: str) -> tuple[int, dict[str, str]]:
 def upstream_metadata_scan_v1() -> None:
     @task
     def build_scan_targets() -> list[dict[str, object]]:
-        dag_run = build_scan_targets.get_current_context()["dag_run"]
+        dag_run = get_current_context()["dag_run"]
         conf = dag_run.conf or {}
 
         cycles_override = conf.get("cycles")
@@ -95,7 +96,7 @@ def upstream_metadata_scan_v1() -> None:
 
     @task
     def observe_artifact(target: dict[str, object], domain_db_path: str) -> dict[str, object]:
-        context = observe_artifact.get_current_context()
+        context = get_current_context()
         task_instance = context["ti"]
 
         cycle = int(target["cycle"])
@@ -175,7 +176,7 @@ def upstream_metadata_scan_v1() -> None:
 
     @task(trigger_rule=TriggerRule.ALL_DONE)
     def update_snapshot(domain_db_path: str) -> int:
-        context = update_snapshot.get_current_context()
+        context = get_current_context()
         return upsert_snapshot_from_run(
             Path(domain_db_path),
             dag_id=context["dag"].dag_id,
@@ -184,7 +185,7 @@ def upstream_metadata_scan_v1() -> None:
 
     @task(trigger_rule=TriggerRule.ALL_DONE)
     def enforce_run_outcome() -> None:
-        context = enforce_run_outcome.get_current_context()
+        context = get_current_context()
         dag_run = context["dag_run"]
         task_instances = dag_run.get_task_instances()
         failed_mapped = [
@@ -201,7 +202,7 @@ def upstream_metadata_scan_v1() -> None:
 
     targets = build_scan_targets()
     db_path = schema_gate()
-    mapped = observe_artifact.expand(target=targets, domain_db_path=db_path)
+    mapped = observe_artifact.partial(domain_db_path=db_path).expand(target=targets)
     snapshot = update_snapshot(db_path)
     mapped >> snapshot
     snapshot >> enforce_run_outcome()

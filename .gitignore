@@ -37,6 +37,7 @@
 .env.*
 .venv/
 .venv-airflow-wsl/
+.venv-airflow/
 .user.yml
 __pycache__/
 *.pyc

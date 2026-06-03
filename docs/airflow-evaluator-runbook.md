@@ -22,7 +22,7 @@ Use this split:
 ## Branch Defaults
 
 - DAG ID: `upstream_metadata_scan_v1`
-- Default cadence: every 6 hours
+- Scheduling: disabled (manual triggers only)
 - Timezone: UTC
 - Catchup: disabled
 - Max active runs: 1
@@ -33,22 +33,22 @@ Use this split:
 
 This section is intended for WSL2 or another Linux environment. Do not expect it to work on native Windows for this prototype.
 
-From repo root in WSL2:
+From repo root in Linux/WSL:
 
 ```bash
-bash scripts/wsl2-airflow-setup.sh
+bash scripts/airflow-setup.sh
 ```
 
-This bootstraps a dedicated WSL venv at `.venv-airflow-wsl`, installs Airflow with Linux constraints, configures `AIRFLOW_HOME`, and initializes `db/airflow-runtime.sqlite`.
+This bootstraps a dedicated venv at `.venv-airflow`, installs Airflow with Linux constraints, configures `AIRFLOW_HOME`, and initializes `db/airflow-runtime.sqlite`.
 
 Start scheduler and webserver in separate terminals:
 
 ```bash
-bash scripts/wsl2-airflow-run.sh scheduler
+bash scripts/airflow-run.sh scheduler
 ```
 
 ```bash
-bash scripts/wsl2-airflow-run.sh webserver
+bash scripts/airflow-run.sh webserver
 ```
 
 Open `http://127.0.0.1:8080`.
@@ -106,11 +106,11 @@ SQL: observation history shows try_number=2 for cycle=2026, table=cn and snapsho
 Conclusion: mapped retries and snapshot reducer behaved as expected for partial transient failure.
 ```
 
-## Single-Step Cadence Edit
+## Schedule Mode
 
-To change cadence quickly, edit one setting in the DAG file:
+This branch currently runs in manual-trigger-only mode for evaluation:
 
 - File: `dags/upstream_metadata_scan_v1.py`
-- Setting: `DEFAULT_SCAN_INTERVAL = timedelta(hours=6)`
+- Setting: `MANUAL_TRIGGER_ONLY_SCHEDULE = None`
 
-No other file is required for cadence changes in this branch.
+To re-enable periodic scheduling later, set that value to a timetable interval (for example `timedelta(hours=6)`).

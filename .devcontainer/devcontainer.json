@@ -1,10 +1,9 @@
 {
   "name": "fec-data-dev",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-  "initializeCommand": "bash .devcontainer/scripts/init-host-paths.sh",
   "mounts": [
-    "source=${localEnv:HOME}/.local/share/fec-data/data,target=/workspaces/fec-data/data,type=bind",
-    "source=${localEnv:HOME}/.local/share/fec-data/db,target=/workspaces/fec-data/db,type=bind"
+    "source=fec-data-data,target=/workspaces/fec-data/data,type=volume",
+    "source=fec-data-db,target=/workspaces/fec-data/db,type=volume"
   ],
   "remoteEnv": {
     "FEC_DATA_DIR": "/workspaces/fec-data/data",

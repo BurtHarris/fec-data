@@ -1,6 +1,6 @@
 # Developer Setup
 
-Dev Containers package a reproducible Linux development environment with pinned tools, extensions, and runtime behavior. For this ELT project, that matters because large FEC downloads and DuckDB database builds are sensitive to filesystem performance and environment drift. Running inside a container keeps setup consistent across contributors while routing heavy runtime I/O to Linux-native storage.
+Dev Containers package a reproducible Linux development environment with pinned tools, extensions, and runtime behavior. For this ELT project, that matters because large FEC downloads and DuckDB database builds are sensitive to filesystem performance and environment drift. Running inside a container keeps setup consistent across contributors while isolating heavy runtime I/O in persistent Docker volumes.
 
 ## Docker-First Workflow
 
@@ -51,11 +51,11 @@ From VS Code:
 Storage model used by this repo:
 
 - Repository source files remain in the workspace checkout.
-- High-I/O runtime directories are bind-mounted to Linux-native host paths:
-  - `${HOME}/.local/share/fec-data/data` -> `/workspaces/fec-data/data`
-  - `${HOME}/.local/share/fec-data/db` -> `/workspaces/fec-data/db`
+- High-I/O runtime directories use persistent Docker volumes:
+  - `fec-data-data` -> `/workspaces/fec-data/data`
+  - `fec-data-db` -> `/workspaces/fec-data/db`
 
-This preserves normal Git/editor workflow while keeping heavy ETL I/O off slower mounts.
+This preserves normal Git/editor workflow while avoiding host path translation issues across Docker backends.
 
 ## 3) Apply Updated Devcontainer Mounts (One-Time)
 
@@ -108,7 +108,7 @@ Optional task:
 
 ## Operational Notes
 
-- `data/` and `db/` persist across container restarts/rebuilds because they are mounted from Linux-native host paths.
-- Treat Linux-native mounted paths as source of truth for runtime artifacts.
+- `data/` and `db/` persist across container restarts/rebuilds because they are mounted from Docker volumes.
+- Treat Docker volumes as source of truth for runtime artifacts.
 - Use exported snapshots (`exports/db`) when you need to consume DB files from host-side Windows tools.
 - Avoid `/mnt/c` paths for large imports, transforms, and database writes.

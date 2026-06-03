@@ -50,7 +50,7 @@ The project is still pre-release. Expect active iteration in schemas, transform 
 ## Runtime Storage Model
 
 - Repository source files remain in the normal workspace checkout for Git/editor workflows.
-- Runtime-heavy artifacts (`data/` and `db/`) are mounted to Linux-native host paths by the Dev Container configuration.
+- Runtime-heavy artifacts (`data/` and `db/`) are persisted via Docker volumes by the Dev Container configuration.
 - Use the `Export: db snapshot` task when host-side tools need a copied DB snapshot.
 
 For setup and environment instructions, see [Developer Setup](docs/developer_setup.md).

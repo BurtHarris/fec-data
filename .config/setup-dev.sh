@@ -38,14 +38,6 @@ APT_PACKAGES=(
   bat
 )
 
-require_command() {
-  local command_name="$1"
-  if ! command -v "${command_name}" >/dev/null 2>&1; then
-    echo "Required command missing: ${command_name}" >&2
-    exit 1
-  fi
-}
-
 ensure_symlink() {
   local target="$1"
   local link_name="$2"
@@ -98,7 +90,6 @@ install_duckdb_cli() {
   asset_name="duckdb_cli-linux-${arch}.zip"
   download_url="$(python3 - <<PY
 import json
-import sys
 import urllib.request
 
 asset_name = ${asset_name@Q}
@@ -141,7 +132,7 @@ if ! grep -q 'PYENV_ROOT="$HOME/.pyenv"' "${HOME}/.bashrc"; then
   } >> "${HOME}/.bashrc"
 fi
 
-echo "WSL tool bootstrap complete."
+echo "Linux tool bootstrap complete."
 echo "Python: $(pyenv version-name)"
 echo "uv: $(uv --version)"
 echo "duckdb: $(duckdb --version)"

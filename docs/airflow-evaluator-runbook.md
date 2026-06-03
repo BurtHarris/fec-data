@@ -9,7 +9,7 @@ Native Windows can run the lightweight in-process prototype checks such as `dag.
 Use this split:
 
 - Native Windows: validate prototype behavior with the smoke tests and `dag.test()`.
-- WSL2 or Linux container: use the full Airflow UI and scheduler/webserver flow.
+- Dev container or Linux host: use the full Airflow UI and scheduler/webserver flow.
 
 ## What This Runbook Covers
 
@@ -31,9 +31,9 @@ Use this split:
 
 ## 1. Start Airflow (Localhost Only)
 
-This section is intended for WSL2 or another Linux environment. Do not expect it to work on native Windows for this prototype.
+This section is intended for a dev container or another Linux environment. Do not expect it to work on native Windows for this prototype.
 
-From repo root in Linux/WSL:
+From repo root in the container/Linux shell:
 
 ```bash
 bash scripts/airflow-setup.sh

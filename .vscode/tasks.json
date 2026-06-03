@@ -2,18 +2,54 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Start: stack + open UIs",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Airflow: setup",
+                "Start: services",
+                "Open: UIs"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop: stack services",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "set +e; pkill -f 'airflow scheduler' >/dev/null 2>&1 || true; pkill -f 'airflow webserver' >/dev/null 2>&1 || true; pkill -f 'uv run ops-web --host 127.0.0.1 --port 8787' >/dev/null 2>&1 || true; pkill -f 'uvicorn.*127.0.0.1.*8787' >/dev/null 2>&1 || true; echo 'Stopped airflow scheduler/webserver and ops-web if they were running.'"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
             "label": "Airflow: setup",
             "type": "shell",
             "command": "bash",
             "args": [
                 "scripts/airflow-setup.sh"
             ],
+            "hide": true,
             "problemMatcher": [],
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated",
                 "clear": true
             }
+        },
+        {
+            "label": "Start: services",
+            "dependsOrder": "parallel",
+            "dependsOn": [
+                "Airflow: scheduler",
+                "Airflow: webserver",
+                "Ops Web: app"
+            ],
+            "hide": true,
+            "problemMatcher": []
         },
         {
             "label": "Airflow: scheduler",
@@ -23,6 +59,7 @@
                 "scripts/airflow-run.sh",
                 "scheduler"
             ],
+            "hide": true,
             "isBackground": true,
             "problemMatcher": [],
             "presentation": {
@@ -38,6 +75,7 @@
                 "scripts/airflow-run.sh",
                 "webserver"
             ],
+            "hide": true,
             "isBackground": true,
             "problemMatcher": [],
             "presentation": {
@@ -46,23 +84,35 @@
             }
         },
         {
-            "label": "Airflow: start scheduler + webserver",
-            "dependsOrder": "parallel",
-            "dependsOn": [
-                "Airflow: scheduler",
-                "Airflow: webserver"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "Airflow: open UI",
+            "label": "Ops Web: app",
             "type": "shell",
             "command": "bash",
             "args": [
                 "-lc",
-                "if command -v xdg-open >/dev/null 2>&1; then xdg-open http://127.0.0.1:8080; else echo 'Open http://127.0.0.1:8080 in your browser'; fi"
+                "uv run ops-web --host 127.0.0.1 --port 8787"
             ],
-            "problemMatcher": []
+            "hide": true,
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Open: UIs",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "if [[ -n \"${BROWSER:-}\" ]]; then \"$BROWSER\" http://127.0.0.1:8080; \"$BROWSER\" http://127.0.0.1:8787; elif command -v xdg-open >/dev/null 2>&1; then xdg-open http://127.0.0.1:8080; xdg-open http://127.0.0.1:8787; else echo 'Open http://127.0.0.1:8080 and http://127.0.0.1:8787 in your browser'; fi"
+            ],
+            "hide": true,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
         }
     ]
 }

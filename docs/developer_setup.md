@@ -75,6 +75,29 @@ uv --version
 duckdb --version
 ```
 
+## 5) Launch And Stop From VS Code
+
+This repo includes a simplified task workflow so daily usage is two commands.
+
+From VS Code:
+
+1. Run task: `Start: stack + open UIs`
+2. Run task when done: `Stop: stack services`
+
+What start does:
+
+- Runs Airflow setup (`scripts/airflow-setup.sh`)
+- Starts Airflow scheduler and webserver
+- Starts the ops web app on `http://127.0.0.1:8787`
+- Opens external browser tabs for:
+  - `http://127.0.0.1:8080` (Airflow UI)
+  - `http://127.0.0.1:8787` (ops web UI)
+
+Implementation note:
+
+- Only `Start: stack + open UIs` and `Stop: stack services` are intended for regular use.
+- Helper tasks are kept hidden in the task picker and can be regenerated later if needed.
+
 ## Operational Notes
 
 - Build DuckDB databases under project paths like db/, data/, logs/, and tmp/ inside the container workspace.

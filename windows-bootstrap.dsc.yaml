@@ -1,0 +1,56 @@
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: install_wsl
+      directives:
+        description: Install WSL
+        allowPrerelease: false
+      settings:
+        id: Microsoft.WSL
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: install_vscode
+      directives:
+        description: Install Visual Studio Code
+        allowPrerelease: false
+      settings:
+        id: Microsoft.VisualStudioCode
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: install_gcm
+      directives:
+        description: Install Git Credential Manager
+        allowPrerelease: false
+      settings:
+        id: GitHub.GitCredentialManager
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: install_terminal_optional
+      directives:
+        description: Optional - Windows Terminal
+        allowPrerelease: false
+      settings:
+        id: Microsoft.WindowsTerminal
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: install_powertoys_optional
+      directives:
+        description: Optional - PowerToys
+        allowPrerelease: false
+      settings:
+        id: Microsoft.PowerToys
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: install_7zip_optional
+      directives:
+        description: Optional - 7-Zip
+        allowPrerelease: false
+      settings:
+        id: 7zip.7zip
+        source: winget

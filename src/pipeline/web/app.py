@@ -14,8 +14,10 @@ import yaml
 from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH, load_data_scope_config, parse_year_range
 from pipeline.etl_config import repo_root
 from pipeline.metadata_store import DownloadMetadataStore, DownloadStatusRecord, build_sqlite_metadata_store
+from pipeline.web.airflow_failures import load_airflow_failure_report
 from pipeline.web.command_runner import CommandAuditStore, CommandRequest, CommandRunner, CommandRunRecord
 from pipeline.web.health import collect_health_metrics, render_health
+from pipeline.web.airflow_failure_render import render_airflow_failures
 from pipeline.web.upstream_changes import load_upstream_changes_report
 from pipeline.web.upstream_render import render_upstream_changes
 
@@ -25,6 +27,7 @@ SCREEN_ROUTES: tuple[tuple[str, str], ...] = (
     # ("/runs", "Runs"),
     # ("/data-scope-config", "Data Scope Config"),
     ("/history", "History"),
+    ("/airflow-failures", "Airflow Failures"),
     ("/health", "Health"),
     # ("/upstream-changes", "Upstream Changes"),
 )
@@ -541,6 +544,8 @@ def _render_dashboard(
             ("Config path", str(config_path)),
         ]
         sqlite_config = config.get("metadata_database", {}).get("sqlite", {})
+
+
         if isinstance(sqlite_config, dict) and sqlite_config.get("path"):
             scope_rows.append(
                 (
@@ -1108,6 +1113,12 @@ def create_app(
         metrics = collect_health_metrics(resolved_repo_root, resolve_metadata_store(), app_runner)
         body_html = render_health(metrics)
         return HTMLResponse(content=render_shell("/health", body_html=body_html))
+
+    @app.get("/airflow-failures", response_class=HTMLResponse, include_in_schema=False)
+    def airflow_failures() -> HTMLResponse:
+        report_path = resolved_repo_root / "db" / "fec-observations.sqlite"
+        report = load_airflow_failure_report(report_path)
+        return HTMLResponse(content=render_shell("/airflow-failures", body_html=render_airflow_failures(report)))
 
     @app.get("/runs", response_class=HTMLResponse, include_in_schema=False)
     def runs(run_number: int | None = None, message: str | None = None, error: str | None = None) -> HTMLResponse:

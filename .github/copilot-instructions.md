@@ -4,14 +4,15 @@
 
 ## Project Summary
 
-This is a batch ETL project that downloads Federal Election Commission (FEC) bulk ZIP files, manages them locally, and loads them into a local DuckDB database for analysis. The host OS is Windows. All scripting is done in PowerShell.
+This is a batch ETL project that downloads Federal Election Commission (FEC) bulk ZIP files, manages them locally, and loads them into a local DuckDB database for analysis. The active development host is Linux/WSL. Shell scripts handle setup and orchestration, with PowerShell retained only for Windows-specific helpers.
 
 ## Stack
 
 - DuckDB CLI — local analytics database and SQL transforms
 - curl — bulk file downloads
 - 7-Zip CLI — unpacking downloaded zip files
-- PowerShell — ETL orchestration scripts
+- Bash — WSL/Linux bootstrap and Airflow orchestration
+- PowerShell — Windows-specific helper scripts
 - jq — JSON parsing in shell pipelines
 - ripgrep (`rg`) — fast recursive search
 - fd — fast file discovery
@@ -19,8 +20,8 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 - bat — syntax-highlighted file preview
 - delta — improved git diff display
 - GitHub CLI (`gh`) — GitHub operations
-- Windows (PowerShell for ETL and admin tasks)
-- winget — tool provisioning (`.config/configuration.winget`)
+- Windows (PowerShell for Windows-only helper workflows)
+- WSL/Linux bootstrap — `.config/setup-wsl.sh` and `scripts/setup-tools.sh`
 
 ## Preferred CLI Tooling for Agents
 
@@ -43,8 +44,8 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 ## Repository Layout
 
 ```
-.config/                   # winget provisioning (Microsoft-recommended location)
-  configuration.winget     # winget configure file
+.config/                   # WSL/Linux bootstrap helpers and local config
+  setup-wsl.sh             # dependency bootstrap for Ubuntu/WSL
 data/raw/                  # Downloaded source files — git-ignored, not committed
 data/staging/              # Unpacked/normalized files — git-ignored
 data/processed/            # Curated extracts — git-ignored
@@ -65,11 +66,11 @@ tmp/                       # Temp artifacts — git-ignored
 ## Setting Up Tools (run once on a new machine)
 
 Run the provisioning script from the project root:
-```powershell
-./scripts/setup-tools.ps1
+```bash
+bash scripts/setup-tools.sh
 ```
 
-This calls `winget configure` against `.config/configuration.winget` and installs DuckDB CLI, Git, curl, and jq.
+This bootstraps Ubuntu/WSL with apt dependencies, `pyenv`, `uv`, and the DuckDB CLI binary.
 
 ## Common Commands
 

@@ -2,11 +2,13 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+import sqlite3
 
 from fastapi import HTTPException, Request
 
 from pipeline.data_scope import CANONICAL_DATA_SCOPE_PATH
 from pipeline.metadata_store import DownloadStatusRecord, FetchHistoryRecord, InMemoryDownloadMetadataStore
+from pipeline.web.airflow_failures import load_airflow_failure_report
 from pipeline.web.app import SCREEN_ROUTES, create_app, render_shell
 from pipeline.web.command_runner import CommandRequest, CommandRunRecord
 
@@ -167,6 +169,91 @@ def _make_request(path: str, body: bytes = b"") -> Request:
     )
 
 
+def _write_airflow_failure_db(root: Path) -> Path:
+    db_path = root / "db" / "fec-observations.sqlite"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE airflow_upstream_observation_history (
+                observation_id INTEGER PRIMARY KEY,
+                observed_at TEXT NOT NULL,
+                dag_id TEXT NOT NULL,
+                dag_run_id TEXT NOT NULL,
+                cycle INTEGER NOT NULL,
+                table_name TEXT NOT NULL,
+                zip_name TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                fetch_status TEXT NOT NULL,
+                http_status INTEGER,
+                error_class TEXT,
+                error_message TEXT,
+                map_index INTEGER NOT NULL,
+                try_number INTEGER NOT NULL
+            )
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO airflow_upstream_observation_history (
+                observation_id,
+                observed_at,
+                dag_id,
+                dag_run_id,
+                cycle,
+                table_name,
+                zip_name,
+                source_url,
+                fetch_status,
+                http_status,
+                error_class,
+                error_message,
+                map_index,
+                try_number
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    1,
+                    "2026-06-03T00:03:45Z",
+                    "upstream_metadata_scan_v1",
+                    "manual__2026-06-03T00:03:45.738573+00:00",
+                    2020,
+                    "cm",
+                    "cm20.zip",
+                    "https://example.test/cm20.zip",
+                    "timeout",
+                    None,
+                    "TimeoutError",
+                    "download timed out",
+                    4,
+                    1,
+                ),
+                (
+                    2,
+                    "2026-06-03T00:03:46Z",
+                    "upstream_metadata_scan_v1",
+                    "manual__2026-06-03T00:03:45.738573+00:00",
+                    2020,
+                    "cn",
+                    "cn20.zip",
+                    "https://example.test/cn20.zip",
+                    "dns_error",
+                    None,
+                    "ConnectionError",
+                    "name resolution failed",
+                    5,
+                    1,
+                ),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return db_path
+
+
 class OperationsWebAppShellTests(unittest.TestCase):
     def test_healthz_endpoint_is_registered(self) -> None:
         app = create_app()
@@ -181,6 +268,46 @@ class OperationsWebAppShellTests(unittest.TestCase):
 
         for _, label in SCREEN_ROUTES:
             self.assertIn(label, html)
+
+    def test_shell_routes_include_airflow_failures(self) -> None:
+        app = create_app()
+
+        registered_paths = {route.path for route in app.routes if hasattr(route, "path")}
+
+        self.assertIn("/airflow-failures", registered_paths)
+
+    def test_airflow_failure_report_loads_latest_failed_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db_path = _write_airflow_failure_db(root)
+
+            report = load_airflow_failure_report(db_path)
+
+        self.assertEqual(report.status, "ready")
+        self.assertEqual(report.latest_failed_run_id, "manual__2026-06-03T00:03:45.738573+00:00")
+        self.assertEqual(report.failed_attempt_count, 2)
+        self.assertEqual(report.failed_asset_count, 2)
+        self.assertEqual([summary.error_class for summary in report.error_class_summaries], ["ConnectionError", "TimeoutError"])
+        self.assertEqual(report.failed_events[0].map_index, 4)
+        self.assertEqual(report.failed_events[1].map_index, 5)
+
+    def test_airflow_failures_route_renders_clean_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_airflow_failure_db(root)
+            app = create_app(repo_root_path=root, runner=_StubRunner())
+            route = next((route for route in app.routes if getattr(route, "path", None) == "/airflow-failures"), None)
+            assert route is not None
+
+            response = route.endpoint()
+            html = response.body.decode("utf-8")
+
+        self.assertIn("Latest Airflow failure batch", html)
+        self.assertIn("Failure classes", html)
+        self.assertIn("TimeoutError", html)
+        self.assertIn("ConnectionError", html)
+        self.assertIn("download timed out", html)
+        self.assertIn("name resolution failed", html)
 
     def test_dashboard_route_renders_canonical_scope_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

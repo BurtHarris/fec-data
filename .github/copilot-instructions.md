@@ -21,7 +21,7 @@ This is a batch ETL project that downloads Federal Election Commission (FEC) bul
 - delta — improved git diff display
 - GitHub CLI (`gh`) — GitHub operations
 - Windows (PowerShell for Windows-only helper workflows)
-- WSL/Linux bootstrap — `.config/setup-wsl.sh` and `scripts/setup-tools.sh`
+- Devcontainer bootstrap — `.devcontainer/Dockerfile`
 
 ## Preferred CLI Tooling for Agents
 
@@ -65,12 +65,12 @@ tmp/                       # Temp artifacts — git-ignored
 
 ## Setting Up Tools (run once on a new machine)
 
-Run the provisioning script from the project root:
+Rebuild the devcontainer to provision tools from the Dockerfile:
 ```bash
-bash scripts/setup-tools.sh
+Dev Containers: Rebuild Container
 ```
 
-This bootstraps Ubuntu/WSL with apt dependencies, `pyenv`, `uv`, and the DuckDB CLI binary.
+This provisions apt dependencies, `pyenv`, `uv`, and the DuckDB CLI binary.
 
 ## Common Commands
 

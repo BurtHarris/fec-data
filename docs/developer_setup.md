@@ -8,14 +8,13 @@ This repository is configured for a Docker-first workflow using VS Code Dev Cont
 
 - Daily development runs in a Linux dev container.
 - Windows-specific setup is limited to installing Docker Desktop (plus VS Code) via Winget Configure.
-- Project dependencies and tooling are provisioned inside the container through scripts/setup-tools.sh.
+- Project dependencies and tooling are provisioned during devcontainer image build.
 
 ## Repository Layout For Bootstrap
 
 ```text
-/scripts
-  setup-tools.sh
 /.devcontainer
+  Dockerfile
   devcontainer.json
 windows-bootstrap.dsc.yaml
 /docs
@@ -72,9 +71,10 @@ From VS Code:
 Open a terminal in the container and verify:
 
 ```bash
-bash scripts/setup-tools.sh
 uv --version
 duckdb --version
+python --version
+python -c "from airflow.providers.http.hooks.http import HttpHook; from airflow.providers.sqlite.hooks.sqlite import SqliteHook; from airflow_provider_duckdb.hooks.duckdb_hook import DuckDBHook; print('airflow adapters: http/sqlite/duckdb ready')"
 echo "$FEC_DATA_DIR"
 echo "$FEC_DB_DIR"
 ```

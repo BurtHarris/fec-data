@@ -2,6 +2,10 @@
   "name": "fec-data-dev",
   "dockerFile": "Dockerfile",
 
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+
   // --- Persistent storage volumes ---
   "mounts": [
     "source=fec_data,target=/workspaces/fec-data/data,type=volume",
@@ -18,6 +22,11 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        "galbezalel.vscode-duckdb-notebook",
+        "chuckjonas.duckdb",
+        "yy0931.vscode-sqlite3-editor",
+        "ms-vscode.live-server",
+        "ritwickdey.liveserver",
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-toolsai.jupyter",
@@ -32,5 +41,5 @@
     "--privileged"
   ],
 
-  "remoteUser": "vscode"
+  "remoteUser": "astro"
 }

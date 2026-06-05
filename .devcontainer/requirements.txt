@@ -1,0 +1,3 @@
+# Intentionally empty: Astro runtime's ONBUILD hook requires this file,
+# but project Python dependencies are installed in Dockerfile with higher
+# timeout and retry settings for large wheel downloads.

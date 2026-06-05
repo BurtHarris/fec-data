@@ -3,15 +3,15 @@ FROM quay.io/astronomer/astro-runtime:10.0.0
 
 USER root
 
-# System packages you likely need
-RUN apt-get update && apt-get install -y \
-    sqlite3 \
-    jq \
-    curl \
+RUN echo 'astro ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/astro && chmod 0440 /etc/sudoers.d/astro
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-# Python packages: dbt + duckdb + sqlite utils
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --root-user-action=ignore \
+    --default-timeout=120 \
+    --retries 10 \
     dbt-duckdb \
     duckdb \
     sqlite-utils

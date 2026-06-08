@@ -48,3 +48,4 @@ node_modules/
 # dbt generated artifacts
 /target/
 /dbt_packages/
+dbt_internal_packages/

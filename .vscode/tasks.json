@@ -113,6 +113,19 @@
                 "reveal": "silent",
                 "panel": "shared"
             }
+        },
+        {
+            "label": "Export: db snapshot",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "scripts/export-db-snapshot.sh"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
         }
     ]
 }

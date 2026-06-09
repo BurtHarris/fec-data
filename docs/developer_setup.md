@@ -1,6 +1,6 @@
 # Developer Setup
 
-Dev Containers package a reproducible Linux development environment with pinned tools, extensions, and runtime behavior. For this ELT project, that matters because large FEC downloads and DuckDB database builds are sensitive to filesystem performance and environment drift. Running inside a container keeps setup consistent across contributors and avoids the performance penalties of heavy I/O against Windows-mounted paths.
+Dev Containers package a reproducible Linux development environment with pinned tools, extensions, and runtime behavior. For this ELT project, that matters because large FEC downloads and DuckDB database builds are sensitive to filesystem performance and environment drift. Running inside a container keeps setup consistent across contributors while isolating heavy runtime I/O in persistent Docker volumes.
 
 ## Docker-First Workflow
 
@@ -15,7 +15,7 @@ This repository is configured for a Docker-first workflow using VS Code Dev Cont
 ```text
 /scripts
   setup-tools.sh
-/devcontainer
+/.devcontainer
   devcontainer.json
 windows-bootstrap.dsc.yaml
 /docs
@@ -38,34 +38,36 @@ This installs host-level prerequisites only:
 - Docker Desktop
 - Visual Studio Code
 
-## 2) Clone Into A Container Volume (Recommended)
+## 2) Open The Repository In A Dev Container
 
-Use this approach for best performance with large ELT files and DuckDB workloads.
+Use your normal repository checkout and open it in a Dev Container.
 
 From VS Code:
 
-1. Run Dev Containers: Clone Repository in Container Volume.
-2. Paste the repository URL.
-3. Let VS Code clone into the Docker-managed volume and open it in the container.
-4. Wait for post-create setup to finish.
+1. Open the repository folder.
+2. Run Dev Containers: Reopen in Container.
+3. Wait for post-create setup to finish.
 
-Why this is preferred:
+Storage model used by this repo:
 
-- Keeps source and runtime files on Linux/container storage.
-- Avoids slower Windows bind mounts for heavy database and file I/O.
-- Reduces warnings about mounted-filesystem performance.
+- Repository source files remain in the workspace checkout.
+- High-I/O runtime directories use persistent Docker volumes:
+  - `fec-data-data` -> `/workspaces/fec-data/data`
+  - `fec-data-db` -> `/workspaces/fec-data/db`
 
-## 3) If You Already Cloned On Windows
+This preserves normal Git/editor workflow while avoiding host path translation issues across Docker backends.
 
-If you opened a Windows folder first and then reopened in container, you may still be on a Windows-backed bind mount.
+## 3) Apply Updated Devcontainer Mounts (One-Time)
 
-To correct it:
+If you pulled recent changes to `.devcontainer/devcontainer.json`, rebuild once to apply new mounts.
 
-1. In VS Code, run Dev Containers: Clone Repository in Container Volume.
-2. Reclone the repository using that command.
-3. Re-run setup after opening the new container workspace.
+From VS Code:
 
-## 4) Verify Tooling Inside The Container
+1. Run Dev Containers: Rebuild Container.
+2. Reopen the workspace after rebuild completes.
+3. Continue with normal start/stop tasks.
+
+## 4) Verify Tooling And Storage Inside The Container
 
 Open a terminal in the container and verify:
 
@@ -73,6 +75,8 @@ Open a terminal in the container and verify:
 bash scripts/setup-tools.sh
 uv --version
 duckdb --version
+echo "$FEC_DATA_DIR"
+echo "$FEC_DB_DIR"
 ```
 
 ## 5) Launch And Stop From VS Code
@@ -98,7 +102,13 @@ Implementation note:
 - Only `Start: stack + open UIs` and `Stop: stack services` are intended for regular use.
 - Helper tasks are kept hidden in the task picker and can be regenerated later if needed.
 
+Optional task:
+
+- Run `Export: db snapshot` to copy database files to `exports/db` for host-side tools.
+
 ## Operational Notes
 
-- Build DuckDB databases under project paths like db/, data/, logs/, and tmp/ inside the container workspace.
-- Avoid /mnt/c paths for large imports, transforms, and database writes.
+- `data/` and `db/` persist across container restarts/rebuilds because they are mounted from Docker volumes.
+- Treat Docker volumes as source of truth for runtime artifacts.
+- Use exported snapshots (`exports/db`) when you need to consume DB files from host-side Windows tools.
+- Avoid `/mnt/c` paths for large imports, transforms, and database writes.

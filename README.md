@@ -6,7 +6,7 @@ The project is still pre-release. Expect active iteration in schemas, transform 
 
 ## Documentation
 
-- [Developer Setup](docs/developer_setup.md): Dev Container workflow, host prerequisites, and performance-oriented clone guidance.
+- [Developer Setup](docs/developer_setup.md): Dev Container workflow, host prerequisites, and split-storage guidance (repo source in workspace, runtime data on Linux-native mounts).
 - [Project Context](CONTEXT.md): domain and working context for this repository.
 - [Architecture Decisions](docs/adr): decision records tracked during project evolution.
 
@@ -46,5 +46,11 @@ The project is still pre-release. Expect active iteration in schemas, transform 
 - Backward compatibility is not guaranteed yet.
 - Data model names and load sequencing may be refined.
 - Performance characteristics will continue to improve as datasets scale.
+
+## Runtime Storage Model
+
+- Repository source files remain in the normal workspace checkout for Git/editor workflows.
+- Runtime-heavy artifacts (`data/` and `db/`) are persisted via Docker volumes by the Dev Container configuration.
+- Use the `Export: db snapshot` task when host-side tools need a copied DB snapshot.
 
 For setup and environment instructions, see [Developer Setup](docs/developer_setup.md).
